@@ -12,6 +12,8 @@ const NAV = [
   { to: '/parts', label: 'Parts', roles: ['ADMIN', 'INVENTORY', 'ENGINEER'] },
   { to: '/returns', label: 'Returns', roles: ['ADMIN', 'SALES'] },
   { to: '/reports', label: 'Reports', roles: ['ADMIN', 'RECORDS'] },
+  { to: '/phone-models', label: 'Phone Models', roles: ['ADMIN', 'INVENTORY'] },
+  { to: '/suppliers', label: 'Suppliers', roles: ['ADMIN', 'INVENTORY'] },
   { to: '/users', label: 'Users', roles: ['ADMIN'] },
 ]
 

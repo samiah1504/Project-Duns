@@ -16,6 +16,8 @@ import Parts from './pages/Parts'
 import Returns from './pages/Returns'
 import Reports from './pages/Reports'
 import Users from './pages/Users'
+import Suppliers from './pages/Suppliers'
+import PhoneModels from './pages/PhoneModels'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } })
 
@@ -51,6 +53,8 @@ export default function App() {
             <Route path="/returns" element={<ProtectedLayout><Returns /></ProtectedLayout>} />
             <Route path="/reports" element={<ProtectedLayout><Reports /></ProtectedLayout>} />
             <Route path="/users" element={<ProtectedLayout><Users /></ProtectedLayout>} />
+            <Route path="/suppliers" element={<ProtectedLayout><Suppliers /></ProtectedLayout>} />
+            <Route path="/phone-models" element={<ProtectedLayout><PhoneModels /></ProtectedLayout>} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>
