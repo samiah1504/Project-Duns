@@ -7,6 +7,14 @@ import { Sale, SalePayment } from '../types'
 import { Btn, fmt } from '../components/Layout'
 import { getCompanySettings } from '../hooks/useCompanySettings'
 
+function apiErr(e: any, fallback = 'An error occurred'): string {
+  const d = e?.response?.data?.detail
+  if (!d) return fallback
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d.map((x: any) => x.msg ?? String(x)).join('; ')
+  return fallback
+}
+
 const payColor = (s: string) => s === 'paid' ? '#16a34a' : s === 'partial' ? '#d97706' : '#dc2626'
 const payLabel = (s: string) => s.replace('_', ' ').toUpperCase()
 
@@ -192,7 +200,7 @@ export default function SaleDetail() {
       setPayAmount('')
       setPayNotes('')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.detail ?? 'Failed to record payment'),
+    onError: (e: any) => toast.error(apiErr(e, 'Failed to record payment')),
   })
 
   const submitPayment = () => {

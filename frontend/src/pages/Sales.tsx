@@ -7,6 +7,15 @@ import { getSales, createSale, getCustomers, getSellableDevices, getPhoneModels 
 import { Sale, Customer, Device, PhoneModel } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, fmt } from '../components/Layout'
 
+// FastAPI returns detail as string OR array of {loc,msg,type,input} objects
+function apiErr(e: any, fallback = 'An error occurred'): string {
+  const d = e?.response?.data?.detail
+  if (!d) return fallback
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d.map((x: any) => x.msg ?? String(x)).join('; ')
+  return fallback
+}
+
 const payColor = (s: string) => s === 'paid' ? '#16a34a' : s === 'partial' ? '#d97706' : '#dc2626'
 const payLabel = (s: string) => s.replace('_', ' ').toUpperCase()
 
@@ -108,7 +117,7 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
   const mut = useMutation({
     mutationFn: (data: unknown) => createSale(data),
     onSuccess: (res) => { toast.success('Sale created'); onSuccess(res.data as Sale) },
-    onError: (e: any) => toast.error(e?.response?.data?.detail ?? 'Failed to create sale'),
+    onError: (e: any) => toast.error(apiErr(e, 'Failed to create sale')),
   })
 
   const totalQty = lineItems.length
