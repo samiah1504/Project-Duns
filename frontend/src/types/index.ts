@@ -114,6 +114,20 @@ export interface POLineItem {
   part_id?: string
   quantity: number
   notes?: string
+  brand?: string
+  model_name_str?: string
+  storage_str?: string
+  colour_str?: string
+}
+
+export interface DeviceWithModel extends Device {
+  model?: {
+    id: string
+    brand: string
+    model_name: string
+    storage?: string
+    colour?: string
+  }
 }
 
 export interface Sale {

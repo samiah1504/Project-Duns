@@ -56,6 +56,7 @@ export const getPurchaseOrders = (params?: Record<string, string>) => api.get('/
 export const getPurchaseOrder = (id: string) => api.get(`/purchase-orders/${id}`)
 export const createPurchaseOrder = (data: unknown) => api.post('/purchase-orders', data)
 export const receivePurchaseOrder = (id: string, data: unknown) => api.post(`/purchase-orders/${id}/receive`, data)
+export const getPODevices = (id: string) => api.get(`/purchase-orders/${id}/devices`)
 
 // Refurb Jobs
 export const getRefurbJobs = (params?: Record<string, string>) => api.get('/refurb-jobs', { params })

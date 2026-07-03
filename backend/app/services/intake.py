@@ -6,6 +6,7 @@ from sqlalchemy import select, func
 
 from app.models.purchase_order import PurchaseOrder, POLineItem, POStatus, POLineType
 from app.models.device import Device, DeviceStatus, DeviceLocation, DeviceGrade
+from app.models.model import PhoneModel
 from app.models.part import Part
 from app.models.audit_log import ReferenceType
 from app.services.audit import write_audit
@@ -24,6 +25,34 @@ async def generate_po_number(db: AsyncSession) -> str:
     return f"{prefix}{str(count + 1).zfill(3)}"
 
 
+async def _find_or_create_phone_model(
+    db: AsyncSession,
+    brand: str,
+    model_name: str,
+    storage: Optional[str],
+    colour: Optional[str],
+) -> PhoneModel:
+    """Find an existing PhoneModel or create one."""
+    q = select(PhoneModel).where(
+        PhoneModel.brand == brand,
+        PhoneModel.model_name == model_name,
+    )
+    if storage:
+        q = q.where(PhoneModel.storage == storage)
+    if colour:
+        q = q.where(PhoneModel.colour == colour)
+
+    result = await db.execute(q)
+    pm = result.scalar_one_or_none()
+    if pm:
+        return pm
+
+    pm = PhoneModel(brand=brand, model_name=model_name, storage=storage, colour=colour)
+    db.add(pm)
+    await db.flush()
+    return pm
+
+
 async def create_purchase_order(
     db: AsyncSession,
     supplier_id: str,
@@ -31,6 +60,7 @@ async def create_purchase_order(
     shipping_cost=None,
     notes: Optional[str] = None,
     order_date: Optional[date] = None,
+    user_id: Optional[str] = None,
 ) -> PurchaseOrder:
     from decimal import Decimal
 
@@ -46,18 +76,71 @@ async def create_purchase_order(
     await db.flush()
 
     for item_data in line_items_data:
+        # Resolve model_id: use explicit FK or find/create from inline fields
+        model_id = item_data.model_id
+        if not model_id and item_data.brand and item_data.model_name_str:
+            pm = await _find_or_create_phone_model(
+                db,
+                brand=item_data.brand,
+                model_name=item_data.model_name_str,
+                storage=item_data.storage_str,
+                colour=item_data.colour_str,
+            )
+            model_id = pm.id
+
         line = POLineItem(
             po_id=po.id,
             line_type=item_data.line_type,
             imei=item_data.imei,
-            model_id=item_data.model_id,
+            model_id=model_id,
             grade=item_data.grade,
             unit_cost=item_data.unit_cost,
             part_id=item_data.part_id,
             quantity=item_data.quantity,
             notes=item_data.notes,
+            brand=item_data.brand,
+            model_name_str=item_data.model_name_str,
+            storage_str=item_data.storage_str,
+            colour_str=item_data.colour_str,
         )
         db.add(line)
+
+        # Auto-create device immediately for device lines
+        if item_data.line_type == POLineType.DEVICE and item_data.imei:
+            existing = await db.execute(select(Device).where(Device.imei == item_data.imei))
+            if existing.scalar_one_or_none():
+                raise ConflictError(f"IMEI {item_data.imei} already exists in inventory")
+
+            if not model_id:
+                raise BadRequestError(f"Device line for IMEI {item_data.imei} is missing model info")
+
+            device = Device(
+                imei=item_data.imei,
+                model_id=model_id,
+                grade=DeviceGrade(item_data.grade) if item_data.grade else DeviceGrade.C,
+                status=DeviceStatus.AWAITING_REFURB,
+                location=DeviceLocation.INTAKE,
+                purchase_cost=item_data.unit_cost,
+                purchase_order_id=po.id,
+                supplier_id=supplier_id,
+                date_received=date.today(),
+            )
+            db.add(device)
+            await db.flush()
+
+            if user_id:
+                await write_audit(
+                    db,
+                    user_id=user_id,
+                    device_id=device.id,
+                    from_status=None,
+                    to_status=DeviceStatus.AWAITING_REFURB.value,
+                    from_location=None,
+                    to_location=DeviceLocation.INTAKE.value,
+                    reference_type=ReferenceType.PO,
+                    reference_id=po.po_number,
+                    notes=f"Received via PO {po.po_number}",
+                )
 
     return po
 
@@ -68,83 +151,17 @@ async def receive_purchase_order(
     user_id: str,
     notes: Optional[str] = None,
 ) -> PurchaseOrder:
-    result = await db.execute(
-        select(PurchaseOrder).where(PurchaseOrder.id == po_id)
-    )
+    result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
     po = result.scalar_one_or_none()
     if not po:
         raise NotFoundError("Purchase order not found")
     if po.status != POStatus.OPEN:
         raise BadRequestError(f"PO is already {po.status.value}")
 
-    # Load line items
-    items_result = await db.execute(
-        select(POLineItem).where(POLineItem.po_id == po_id)
-    )
-    line_items = items_result.scalars().all()
-
-    for item in line_items:
-        if item.line_type == POLineType.DEVICE:
-            if not item.imei:
-                raise BadRequestError("Device line item missing IMEI")
-            # Check IMEI uniqueness
-            existing = await db.execute(
-                select(Device).where(Device.imei == item.imei)
-            )
-            if existing.scalar_one_or_none():
-                raise ConflictError(f"IMEI {item.imei} already exists")
-
-            device = Device(
-                imei=item.imei,
-                model_id=item.model_id,
-                grade=DeviceGrade(item.grade) if item.grade else DeviceGrade.C,
-                status=DeviceStatus.AWAITING_REFURB,
-                location=DeviceLocation.INTAKE,
-                purchase_cost=item.unit_cost,
-                purchase_order_id=po.id,
-                supplier_id=po.supplier_id,
-                date_received=date.today(),
-            )
-            db.add(device)
-            await db.flush()
-
-            await write_audit(
-                db,
-                user_id=user_id,
-                device_id=device.id,
-                from_status=None,
-                to_status=DeviceStatus.AWAITING_REFURB.value,
-                from_location=None,
-                to_location=DeviceLocation.INTAKE.value,
-                reference_type=ReferenceType.PO,
-                reference_id=po.po_number,
-                notes=f"Received via PO {po.po_number}",
-            )
-
-        elif item.line_type == POLineType.PART:
-            if not item.part_id:
-                raise BadRequestError("Part line item missing part_id")
-            part_result = await db.execute(select(Part).where(Part.id == item.part_id))
-            part = part_result.scalar_one_or_none()
-            if not part:
-                raise NotFoundError(f"Part {item.part_id} not found")
-            part.quantity_on_hand += item.quantity
-
-            await write_audit(
-                db,
-                user_id=user_id,
-                part_id=part.id,
-                from_location=None,
-                to_location=part.location,
-                reference_type=ReferenceType.PO,
-                reference_id=po.po_number,
-                notes=f"Stock received: +{item.quantity} via PO {po.po_number}",
-            )
-
     po.status = POStatus.RECEIVED
     po.received_by_user_id = user_id
     po.received_at = datetime.utcnow()
     if notes:
-        po.notes = notes
+        po.notes = (po.notes or "") + f"\nReceived note: {notes}"
 
     return po

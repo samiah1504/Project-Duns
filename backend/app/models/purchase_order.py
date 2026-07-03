@@ -74,6 +74,11 @@ class POLineItem(Base):
     )
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Inline device details (avoids requiring pre-created phone models)
+    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model_name_str: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    storage_str: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    colour_str: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     purchase_order: Mapped["PurchaseOrder"] = relationship(
         "PurchaseOrder", back_populates="line_items"

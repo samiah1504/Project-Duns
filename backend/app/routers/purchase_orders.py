@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.purchase_order import PurchaseOrder, POStatus
-from app.schemas.purchase_order import PurchaseOrderCreate, PurchaseOrderOut
+from app.models.device import Device
+from app.schemas.purchase_order import PurchaseOrderCreate, PurchaseOrderOut, DeviceForPOOut
 from app.core.permissions import inventory_or_admin
 from app.core.exceptions import NotFoundError
 from app.services.intake import create_purchase_order, receive_purchase_order
@@ -25,7 +27,10 @@ async def list_pos(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    q = select(PurchaseOrder)
+    q = select(PurchaseOrder).options(
+        selectinload(PurchaseOrder.line_items),
+        selectinload(PurchaseOrder.devices),
+    )
     if status:
         q = q.where(PurchaseOrder.status == status)
     result = await db.execute(q.order_by(PurchaseOrder.created_at.desc()))
@@ -36,7 +41,7 @@ async def list_pos(
 async def create_po(
     body: PurchaseOrderCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(inventory_or_admin()),
+    current_user: User = Depends(inventory_or_admin()),
 ):
     po = await create_purchase_order(
         db,
@@ -45,10 +50,18 @@ async def create_po(
         shipping_cost=body.shipping_cost,
         notes=body.notes,
         order_date=body.date,
+        user_id=current_user.id,
     )
     await db.commit()
-    await db.refresh(po)
-    return po
+    result = await db.execute(
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == po.id)
+        .options(
+            selectinload(PurchaseOrder.line_items),
+            selectinload(PurchaseOrder.devices).selectinload(Device.model),
+        )
+    )
+    return result.scalar_one()
 
 
 @router.get("/{po_id}", response_model=PurchaseOrderOut)
@@ -57,11 +70,33 @@ async def get_po(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
+    result = await db.execute(
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == po_id)
+        .options(
+            selectinload(PurchaseOrder.line_items),
+            selectinload(PurchaseOrder.devices).selectinload(Device.model),
+        )
+    )
     po = result.scalar_one_or_none()
     if not po:
         raise NotFoundError("Purchase order not found")
     return po
+
+
+@router.get("/{po_id}/devices", response_model=list[DeviceForPOOut])
+async def get_po_devices(
+    po_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(inventory_or_admin()),
+):
+    result = await db.execute(
+        select(Device)
+        .where(Device.purchase_order_id == po_id)
+        .options(selectinload(Device.model))
+        .order_by(Device.created_at)
+    )
+    return result.scalars().all()
 
 
 @router.post("/{po_id}/receive", response_model=PurchaseOrderOut)
@@ -73,5 +108,12 @@ async def receive_po(
 ):
     po = await receive_purchase_order(db, po_id=po_id, user_id=current_user.id, notes=body.notes)
     await db.commit()
-    await db.refresh(po)
-    return po
+    result = await db.execute(
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == po.id)
+        .options(
+            selectinload(PurchaseOrder.line_items),
+            selectinload(PurchaseOrder.devices).selectinload(Device.model),
+        )
+    )
+    return result.scalar_one()

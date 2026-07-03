@@ -7,11 +7,17 @@ from app.models.purchase_order import POStatus, POLineType
 
 
 class POLineItemCreate(BaseModel):
-    line_type: POLineType
+    line_type: POLineType = POLineType.DEVICE
+    # Inline device details — auto-creates / finds PhoneModel on save
+    brand: Optional[str] = None
+    model_name_str: Optional[str] = None
+    storage_str: Optional[str] = None
+    colour_str: Optional[str] = None
     imei: Optional[str] = None
-    model_id: Optional[str] = None
-    grade: Optional[str] = None
+    model_id: Optional[str] = None   # explicit FK override (optional)
+    grade: Optional[str] = "C"
     unit_cost: Decimal = Decimal("0.00")
+    # Part fields
     part_id: Optional[str] = None
     quantity: int = 1
     notes: Optional[str] = None
@@ -28,6 +34,33 @@ class POLineItemOut(BaseModel):
     part_id: Optional[str] = None
     quantity: int
     notes: Optional[str] = None
+    brand: Optional[str] = None
+    model_name_str: Optional[str] = None
+    storage_str: Optional[str] = None
+    colour_str: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PhoneModelSimple(BaseModel):
+    id: str
+    brand: str
+    model_name: str
+    storage: Optional[str] = None
+    colour: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DeviceForPOOut(BaseModel):
+    id: str
+    imei: str
+    grade: str
+    status: str
+    location: str
+    purchase_cost: Decimal
+    date_received: Optional[date] = None
+    model: Optional[PhoneModelSimple] = None
 
     model_config = {"from_attributes": True}
 
@@ -52,6 +85,7 @@ class PurchaseOrderOut(BaseModel):
     notes: Optional[str] = None
     created_at: datetime
     line_items: List[POLineItemOut] = []
+    devices: List[DeviceForPOOut] = []
 
     model_config = {"from_attributes": True}
 
