@@ -1,8 +1,11 @@
+import logging
 from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models.user import User
@@ -31,18 +34,24 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.email == form_data.username))
-    user = result.scalar_one_or_none()
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise UnauthorizedError("Invalid email or password")
-    if not user.is_active:
-        raise UnauthorizedError("Account is deactivated")
+    try:
+        result = await db.execute(select(User).where(User.email == form_data.username))
+        user = result.scalar_one_or_none()
+        if not user or not verify_password(form_data.password, user.hashed_password):
+            raise UnauthorizedError("Invalid email or password")
+        if not user.is_active:
+            raise UnauthorizedError("Account is deactivated")
 
-    data = {"sub": user.id, "role": user.role.value}
-    return TokenResponse(
-        access_token=create_access_token(data),
-        refresh_token=create_refresh_token(data),
-    )
+        data = {"sub": str(user.id), "role": user.role.value}
+        return TokenResponse(
+            access_token=create_access_token(data),
+            refresh_token=create_refresh_token(data),
+        )
+    except UnauthorizedError:
+        raise
+    except Exception:
+        logger.exception("Unexpected error during login for %s", form_data.username)
+        raise
 
 
 @router.post("/refresh", response_model=TokenResponse)

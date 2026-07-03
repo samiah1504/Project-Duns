@@ -20,8 +20,9 @@ export default function Login() {
       const me = await getMe()
       setUser(me.data)
       navigate('/')
-    } catch {
-      toast.error('Invalid credentials')
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Login failed'
+      toast.error(String(msg))
     } finally {
       setLoading(false)
     }
