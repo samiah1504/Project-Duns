@@ -79,6 +79,8 @@ class POLineItem(Base):
     model_name_str: Mapped[str | None] = mapped_column(String(100), nullable=True)
     storage_str: Mapped[str | None] = mapped_column(String(50), nullable=True)
     colour_str: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Initial device condition / routing at intake
+    initial_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     purchase_order: Mapped["PurchaseOrder"] = relationship(
         "PurchaseOrder", back_populates="line_items"

@@ -114,12 +114,24 @@ async def create_purchase_order(
             if not model_id:
                 raise BadRequestError(f"Device line for IMEI {item_data.imei} is missing model info")
 
+            # Determine initial status and location from the condition field
+            condition = getattr(item_data, 'initial_status', None) or 'awaiting_refurb'
+            if condition == 'sellable':
+                init_status = DeviceStatus.SELLABLE
+                init_location = DeviceLocation.SALES_STOCK
+            elif condition == 'scrapped':
+                init_status = DeviceStatus.SCRAPPED
+                init_location = DeviceLocation.SCRAP
+            else:  # awaiting_refurb (default)
+                init_status = DeviceStatus.AWAITING_REFURB
+                init_location = DeviceLocation.INTAKE
+
             device = Device(
                 imei=item_data.imei,
                 model_id=model_id,
                 grade=DeviceGrade(item_data.grade) if item_data.grade else DeviceGrade.C,
-                status=DeviceStatus.AWAITING_REFURB,
-                location=DeviceLocation.INTAKE,
+                status=init_status,
+                location=init_location,
                 purchase_cost=item_data.unit_cost,
                 purchase_order_id=po.id,
                 supplier_id=supplier_id,
@@ -134,12 +146,12 @@ async def create_purchase_order(
                     user_id=user_id,
                     device_id=device.id,
                     from_status=None,
-                    to_status=DeviceStatus.AWAITING_REFURB.value,
+                    to_status=init_status.value,
                     from_location=None,
-                    to_location=DeviceLocation.INTAKE.value,
+                    to_location=init_location.value,
                     reference_type=ReferenceType.PO,
                     reference_id=po.po_number,
-                    notes=f"Received via PO {po.po_number}",
+                    notes=f"Received via PO {po.po_number} — condition: {condition}",
                 )
 
     return po

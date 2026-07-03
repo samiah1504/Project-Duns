@@ -162,18 +162,29 @@ function PODevicesPanel({ poId, poNumber }: { poId: string; poNumber: string }) 
 const STORAGE_OPTIONS = ['16GB', '32GB', '64GB', '128GB', '256GB', '512GB', '1TB']
 const GRADES = ['A', 'B', 'C']
 
+const CONDITIONS = [
+  { value: 'awaiting_refurb', label: 'Awaiting Refurb' },
+  { value: 'sellable', label: 'Sellable' },
+  { value: 'scrapped', label: 'Parts / Harvest' },
+]
+
+const conditionColor = (v: string) =>
+  v === 'sellable' ? '#16a34a' : v === 'scrapped' ? '#dc2626' : '#d97706'
+
 interface LineItem {
   brand: string
   model_name_str: string
   storage_str: string
   colour_str: string
   grade: string
+  initial_status: string
   imei: string
   unit_cost: string
 }
 
 const emptyLine = (): LineItem => ({
-  brand: '', model_name_str: '', storage_str: '', colour_str: '', grade: 'C', imei: '', unit_cost: '',
+  brand: '', model_name_str: '', storage_str: '', colour_str: '',
+  grade: 'C', initial_status: 'awaiting_refurb', imei: '', unit_cost: '',
 })
 
 function NewPOModal({ open, onClose, suppliers, onSuccess }: {
@@ -224,6 +235,7 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
         storage_str: l.storage_str.trim(),
         colour_str: l.colour_str.trim(),
         grade: l.grade,
+        initial_status: l.initial_status,
         imei: l.imei.trim(),
         unit_cost: parseFloat(l.unit_cost) || 0,
       })),
@@ -259,10 +271,10 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
           {/* Column headers */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1.2fr 0.8fr 0.8fr 0.6fr 1.4fr 0.8fr 28px',
+            gridTemplateColumns: '1fr 1.2fr 0.7fr 0.7fr 0.5fr 1.1fr 1.3fr 0.7fr 28px',
             gap: 4, marginBottom: 4,
           }}>
-            {['Brand', 'Model Name', 'Storage', 'Colour', 'Grade', 'IMEI', 'Cost (₦)', ''].map(h => (
+            {['Brand', 'Model Name', 'Storage', 'Colour', 'Grade', 'Condition', 'IMEI', 'Cost (₦)', ''].map(h => (
               <div key={h} style={{ fontSize: 10, fontWeight: 700, color: '#64748b', padding: '0 2px' }}>{h}</div>
             ))}
           </div>
@@ -270,7 +282,7 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
           {lines.map((line, i) => (
             <div key={i} style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1.2fr 0.8fr 0.8fr 0.6fr 1.4fr 0.8fr 28px',
+              gridTemplateColumns: '1fr 1.2fr 0.7fr 0.7fr 0.5fr 1.1fr 1.3fr 0.7fr 28px',
               gap: 4, marginBottom: 6,
             }}>
               <input placeholder="Samsung" value={line.brand}
@@ -288,6 +300,15 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
                 style={cellStyle} />
               <select value={line.grade} onChange={e => updateLine(i, 'grade', e.target.value)} style={cellStyle}>
                 {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <select
+                value={line.initial_status}
+                onChange={e => updateLine(i, 'initial_status', e.target.value)}
+                style={{ ...cellStyle, color: conditionColor(line.initial_status), fontWeight: 600 }}
+              >
+                {CONDITIONS.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
               <input placeholder="353123456789012" value={line.imei}
                 onChange={e => updateLine(i, 'imei', e.target.value)}
@@ -316,7 +337,10 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
           marginTop: 16, padding: '8px 12px', background: '#f0fdf4', borderRadius: 6,
           fontSize: 12, color: '#166534', border: '1px solid #bbf7d0',
         }}>
-          ℹ️ Devices are added to inventory immediately when this PO is saved.
+          ℹ️ Devices are added to inventory immediately. Condition sets their initial status:
+          <strong> Sellable</strong> → Sales Stock &nbsp;|&nbsp;
+          <strong> Awaiting Refurb</strong> → Intake &nbsp;|&nbsp;
+          <strong> Parts / Harvest</strong> → Scrapped
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

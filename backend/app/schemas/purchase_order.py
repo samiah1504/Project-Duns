@@ -16,6 +16,7 @@ class POLineItemCreate(BaseModel):
     imei: Optional[str] = None
     model_id: Optional[str] = None   # explicit FK override (optional)
     grade: Optional[str] = "C"
+    initial_status: Optional[str] = "awaiting_refurb"  # awaiting_refurb | sellable | scrapped
     unit_cost: Decimal = Decimal("0.00")
     # Part fields
     part_id: Optional[str] = None
@@ -30,6 +31,7 @@ class POLineItemOut(BaseModel):
     imei: Optional[str] = None
     model_id: Optional[str] = None
     grade: Optional[str] = None
+    initial_status: Optional[str] = None
     unit_cost: Decimal
     part_id: Optional[str] = None
     quantity: int
