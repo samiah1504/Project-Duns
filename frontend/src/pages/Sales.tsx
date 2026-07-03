@@ -2,6 +2,7 @@ import { useState, useRef, KeyboardEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+// navigate is used for row clicks to detail page
 import { getSales, createSale, getCustomers, getSellableDevices, getPhoneModels } from '../services/api'
 import { Sale, Customer, Device, PhoneModel } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, fmt } from '../components/Layout'
@@ -65,11 +66,11 @@ export default function Sales() {
           customers={customers as Customer[]}
           sellable={sellable as Device[]}
           phoneModels={phoneModels as PhoneModel[]}
-          onSuccess={sale => {
+          onSuccess={_sale => {
             qc.invalidateQueries({ queryKey: ['sales'] })
             qc.invalidateQueries({ queryKey: ['sellable-devices'] })
             setShowNew(false)
-            navigate(`/sales/${sale.id}`)
+            toast.success('Sale created — click the row to view details')
           }}
         />
       )}
