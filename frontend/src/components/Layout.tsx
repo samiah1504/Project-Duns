@@ -57,7 +57,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const location = useLocation()
 
-  const visibleNav = NAV.filter((n) => user && (user.effective_modules ?? []).includes(n.module))
+  const modules: string[] = user?.effective_modules ?? []
+  const visibleNav = NAV.filter((n) => user && (modules.length > 0 ? modules.includes(n.module) : true))
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>

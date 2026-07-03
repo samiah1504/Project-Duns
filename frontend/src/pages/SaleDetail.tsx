@@ -201,8 +201,21 @@ export default function SaleDetail() {
     payMut.mutate({ amount: amt, payment_method: payMethod, payment_date: payDate, notes: payNotes.trim() || undefined })
   }
 
-  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Loading…</div>
-  if (isError || !sale) return <div style={{ padding: 40, textAlign: 'center', color: '#dc2626' }}>Sale not found.</div>
+  if (isLoading) return (
+    <div style={{ padding: 60, textAlign: 'center', color: '#64748b', fontSize: 16 }}>Loading sale…</div>
+  )
+  if (isError) return (
+    <div style={{ padding: 40 }}>
+      <div style={{ color: '#dc2626', marginBottom: 12 }}>Failed to load sale. The sale may not exist or the server returned an error.</div>
+      <Btn variant="secondary" onClick={() => navigate('/sales')}>← Back to Sales</Btn>
+    </div>
+  )
+  if (!sale) return (
+    <div style={{ padding: 40 }}>
+      <div style={{ color: '#94a3b8', marginBottom: 12 }}>Sale not found.</div>
+      <Btn variant="secondary" onClick={() => navigate('/sales')}>← Back to Sales</Btn>
+    </div>
+  )
 
   const custName = sale.customer?.name ?? 'Walk-in Customer'
   const custPhone = sale.customer?.contact?.phone
@@ -285,8 +298,8 @@ export default function SaleDetail() {
                     </td>
                     <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontSize: 11 }}>{d?.imei ?? '—'}</td>
                     <td style={{ padding: '9px 10px' }}>{item.quantity}</td>
-                    <td style={{ padding: '9px 10px' }}>₦{fmt(item.unit_price)}</td>
-                    <td style={{ padding: '9px 10px', fontWeight: 600 }}>₦{fmt(item.line_total)}</td>
+                    <td style={{ padding: '9px 10px' }}>{fmt(item.unit_price)}</td>
+                    <td style={{ padding: '9px 10px', fontWeight: 600 }}>{fmt(item.line_total)}</td>
                   </tr>
                 )
               })}
@@ -310,13 +323,13 @@ export default function SaleDetail() {
           ))}
           <div style={{ borderTop: '2px solid #e2e8f0', marginTop: 8, paddingTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 17 }}>
-              <span>Grand Total</span><span>₦{fmt(sale.total)}</span>
+              <span>Grand Total</span><span>{fmt(sale.total)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginTop: 5, color: '#16a34a' }}>
-              <span>Amount Paid</span><span>₦{fmt(sale.amount_paid)}</span>
+              <span>Amount Paid</span><span>{fmt(sale.amount_paid)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4, fontWeight: 700, color: parseFloat(sale.balance) > 0 ? '#dc2626' : '#16a34a' }}>
-              <span>Balance Due</span><span>₦{fmt(sale.balance)}</span>
+              <span>Balance Due</span><span>{fmt(sale.balance)}</span>
             </div>
           </div>
         </div>
@@ -380,7 +393,7 @@ export default function SaleDetail() {
               {sale.payments!.map(p => (
                 <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ padding: '8px 10px' }}>{p.payment_date}</td>
-                  <td style={{ padding: '8px 10px', fontWeight: 600, color: '#16a34a' }}>₦{fmt(p.amount)}</td>
+                  <td style={{ padding: '8px 10px', fontWeight: 600, color: '#16a34a' }}>{fmt(p.amount)}</td>
                   <td style={{ padding: '8px 10px', textTransform: 'capitalize' }}>{p.payment_method ?? '—'}</td>
                   <td style={{ padding: '8px 10px', color: '#64748b' }}>{p.notes ?? '—'}</td>
                   <td style={{ padding: '8px 10px' }}>

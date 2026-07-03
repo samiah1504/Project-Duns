@@ -36,10 +36,10 @@ export default function Sales() {
               <TD style={{ textTransform: 'capitalize' }}>{sale.type}</TD>
               <TD>{sale.salesperson_name ?? '—'}</TD>
               <TD style={{ textTransform: 'capitalize' }}>{(sale.sales_channel ?? '—').replace('_', ' ')}</TD>
-              <TD>₦{fmt(sale.total)}</TD>
-              <TD>₦{fmt(sale.amount_paid)}</TD>
+              <TD>{fmt(sale.total)}</TD>
+              <TD>{fmt(sale.amount_paid)}</TD>
               <TD style={{ fontWeight: 600, color: parseFloat(sale.balance) > 0 ? '#dc2626' : '#16a34a' }}>
-                ₦{fmt(sale.balance)}
+                {fmt(sale.balance)}
               </TD>
               <TD>
                 <span style={{
