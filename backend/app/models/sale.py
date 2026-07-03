@@ -78,6 +78,9 @@ class Sale(Base):
         "Device", back_populates="sale", foreign_keys="Device.sale_id"
     )
     returns: Mapped[list["ReturnRMA"]] = relationship("ReturnRMA", back_populates="original_sale")
+    payments: Mapped[list["SalePayment"]] = relationship(
+        "SalePayment", back_populates="sale", cascade="all, delete-orphan", order_by="SalePayment.created_at"
+    )
 
     @property
     def balance(self) -> Decimal:

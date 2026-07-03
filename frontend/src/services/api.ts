@@ -70,6 +70,7 @@ export const getSales = (params?: Record<string, string>) => api.get('/sales', {
 export const getSale = (id: string) => api.get(`/sales/${id}`)
 export const createSale = (data: unknown) => api.post('/sales', data)
 export const addPayment = (id: string, data: unknown) => api.post(`/sales/${id}/add-payment`, data)
+export const addSalePayment = (id: string, data: unknown) => api.post(`/sales/${id}/payments`, data)
 
 // Customers
 export const getCustomers = (params?: Record<string, string>) => api.get('/customers', { params })

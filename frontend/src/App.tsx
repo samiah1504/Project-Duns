@@ -19,6 +19,7 @@ import Users from './pages/Users'
 import Suppliers from './pages/Suppliers'
 import PhoneModels from './pages/PhoneModels'
 import Settings from './pages/Settings'
+import SaleDetail from './pages/SaleDetail'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } })
 
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/intake" element={<ProtectedLayout><Intake /></ProtectedLayout>} />
             <Route path="/refurb" element={<ProtectedLayout><RefurbJobs /></ProtectedLayout>} />
             <Route path="/sales" element={<ProtectedLayout><Sales /></ProtectedLayout>} />
+            <Route path="/sales/:id" element={<ProtectedLayout><SaleDetail /></ProtectedLayout>} />
             <Route path="/customers" element={<ProtectedLayout><Customers /></ProtectedLayout>} />
             <Route path="/parts" element={<ProtectedLayout><Parts /></ProtectedLayout>} />
             <Route path="/returns" element={<ProtectedLayout><Returns /></ProtectedLayout>} />

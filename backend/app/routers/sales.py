@@ -8,8 +8,9 @@ from decimal import Decimal
 
 from app.database import get_db
 from app.models.sale import Sale, SaleLineItem, PaymentStatus
+from app.models.sale_payment import SalePayment
 from app.models.device import Device
-from app.schemas.sale import SaleCreate, SaleOut
+from app.schemas.sale import SaleCreate, SaleOut, SalePaymentCreate, SalePaymentOut
 from app.core.permissions import sales_or_admin, any_authenticated
 from app.core.exceptions import NotFoundError, BadRequestError
 from app.services.sales_service import create_sale
@@ -20,6 +21,8 @@ router = APIRouter()
 
 class AddPaymentBody(BaseModel):
     amount: Decimal
+    payment_method: Optional[str] = None
+    payment_date: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -31,6 +34,7 @@ def _sale_query():
             .selectinload(SaleLineItem.device)
             .selectinload(Device.model),
             selectinload(Sale.customer),
+            selectinload(Sale.payments),
         )
     )
 
@@ -97,18 +101,35 @@ async def get_sale(
     return await _fetch_sale(db, sale_id)
 
 
-@router.post("/{sale_id}/add-payment", response_model=SaleOut)
-async def add_payment(
+@router.post("/{sale_id}/payments", response_model=SaleOut, status_code=201)
+async def add_sale_payment(
     sale_id: str,
     body: AddPaymentBody,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(sales_or_admin()),
 ):
+    from datetime import date as date_type
     sale = await _fetch_sale(db, sale_id)
     if body.amount <= Decimal("0"):
         raise BadRequestError("Payment amount must be positive")
 
-    sale.amount_paid += body.amount
+    pay_date = date_type.today()
+    if body.payment_date:
+        try:
+            pay_date = date_type.fromisoformat(body.payment_date)
+        except ValueError:
+            pass
+
+    payment = SalePayment(
+        sale_id=sale.id,
+        amount=body.amount,
+        payment_method=body.payment_method,
+        payment_date=pay_date,
+        notes=body.notes,
+    )
+    db.add(payment)
+
+    sale.amount_paid = (sale.amount_paid or Decimal("0")) + body.amount
     if sale.amount_paid >= sale.total:
         sale.payment_status = PaymentStatus.PAID
         sale.amount_paid = sale.total
@@ -118,7 +139,17 @@ async def add_payment(
     from app.models.customer import Customer
     cust = (await db.execute(select(Customer).where(Customer.id == sale.customer_id))).scalar_one_or_none()
     if cust:
-        cust.current_balance = max(Decimal("0"), cust.current_balance - body.amount)
+        cust.current_balance = max(Decimal("0"), (cust.current_balance or Decimal("0")) - body.amount)
 
     await db.commit()
     return await _fetch_sale(db, sale.id)
+
+
+@router.post("/{sale_id}/add-payment", response_model=SaleOut)
+async def add_payment_legacy(
+    sale_id: str,
+    body: AddPaymentBody,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(sales_or_admin()),
+):
+    return await add_sale_payment(sale_id, body, db, _)

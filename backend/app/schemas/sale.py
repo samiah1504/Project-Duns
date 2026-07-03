@@ -69,7 +69,27 @@ class SaleCreate(BaseModel):
 
 class AddPaymentRequest(BaseModel):
     amount: Decimal
+    payment_method: Optional[str] = None
+    payment_date: Optional[date] = None
     notes: Optional[str] = None
+
+
+class SalePaymentCreate(BaseModel):
+    amount: Decimal
+    payment_method: Optional[str] = None
+    payment_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class SalePaymentOut(BaseModel):
+    id: str
+    sale_id: str
+    amount: Decimal
+    payment_method: Optional[str] = None
+    payment_date: date
+    notes: Optional[str] = None
+    created_at: datetime
+    model_config = {"from_attributes": True}
 
 
 class SaleOut(BaseModel):
@@ -94,4 +114,5 @@ class SaleOut(BaseModel):
     created_at: datetime
     customer: Optional[CustomerForSale] = None
     line_items: List[SaleLineItemOut] = []
+    payments: List[SalePaymentOut] = []
     model_config = {"from_attributes": True}

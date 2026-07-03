@@ -130,6 +130,16 @@ export interface DeviceWithModel extends Device {
   }
 }
 
+export interface SalePayment {
+  id: string
+  sale_id: string
+  amount: string
+  payment_method?: string
+  payment_date: string
+  notes?: string
+  created_at: string
+}
+
 export interface Sale {
   id: string
   invoice_number: string
@@ -152,6 +162,7 @@ export interface Sale {
   created_at: string
   customer?: { id: string; name: string; contact?: Record<string, string> }
   line_items: SaleLineItem[]
+  payments?: SalePayment[]
 }
 
 export interface SaleLineItem {

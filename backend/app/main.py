@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.database import engine, Base
+import app.models.sale_payment  # noqa: F401 — registers SalePayment with Base.metadata
 
 
 @asynccontextmanager

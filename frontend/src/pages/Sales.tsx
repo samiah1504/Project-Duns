@@ -1,134 +1,37 @@
 import { useState, useRef, KeyboardEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { getSales, createSale, addPayment, getCustomers, getSellableDevices, getPhoneModels } from '../services/api'
+import { getSales, createSale, getCustomers, getSellableDevices, getPhoneModels } from '../services/api'
 import { Sale, Customer, Device, PhoneModel } from '../types'
-import { PageHeader, Card, Table, TR, TD, Btn, Input, fmt } from '../components/Layout'
-import { getCompanySettings } from '../hooks/useCompanySettings'
+import { PageHeader, Card, Table, TR, TD, Btn, fmt } from '../components/Layout'
 
 const payColor = (s: string) => s === 'paid' ? '#16a34a' : s === 'partial' ? '#d97706' : '#dc2626'
 const payLabel = (s: string) => s.replace('_', ' ').toUpperCase()
-
-function printReceipt(sale: Sale) {
-  const co = getCompanySettings()
-  const custName = sale.customer?.name ?? 'Walk-in Customer'
-  const custPhone = sale.customer?.contact?.phone ?? ''
-  const custAddr = sale.customer?.contact?.address ?? ''
-
-  const rows = sale.line_items.map(item => {
-    const d = item.device
-    const m = d?.model
-    return `<tr>
-      <td>${m ? `${m.brand} ${m.model_name}` : '—'}</td>
-      <td>${m?.storage ?? '—'}</td>
-      <td>${m?.colour ?? '—'}</td>
-      <td>${d?.grade ?? '—'}</td>
-      <td style="font-family:monospace">${d?.imei ?? '—'}</td>
-      <td style="text-align:center">${item.quantity}</td>
-      <td style="text-align:right">₦${parseFloat(item.unit_price).toLocaleString()}</td>
-      <td style="text-align:right">₦${parseFloat(item.line_total).toLocaleString()}</td>
-    </tr>`
-  }).join('')
-
-  const sub = parseFloat(sale.subtotal)
-  const disc = parseFloat(sale.discount || '0')
-  const del = parseFloat(sale.delivery_fee || '0')
-  const tax = parseFloat(sale.tax)
-  const total = parseFloat(sale.total)
-  const paid = parseFloat(sale.amount_paid)
-  const bal = parseFloat(sale.balance)
-
-  const html = `<!DOCTYPE html><html><head><title>${sale.invoice_number}</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;margin:0;padding:20px;color:#111}
-    h1{font-size:22px;margin:0}.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:12px}
-    .info{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-bottom:12px;font-size:11px}
-    table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:11px}
-    th{background:#eee;padding:5px 6px;text-align:left;font-size:10px;font-weight:700}
-    td{padding:5px 6px;border-bottom:1px solid #e5e7eb}
-    .totals{margin-left:auto;width:260px}.totals td{padding:4px 6px;border:none}
-    .grand{font-weight:700;font-size:13px;border-top:2px solid #000}
-    .footer{margin-top:20px;text-align:center;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px}
-    @media print{.noPrint{display:none}}
-  </style></head><body>
-  <div class="hdr">
-    <h1>${co.name}</h1>
-    ${co.tagline ? `<div style="font-size:11px;margin-top:3px">${co.tagline}</div>` : ''}
-    ${co.phone ? `<div style="font-size:11px;margin-top:2px">📞 ${co.phone}</div>` : ''}
-    ${co.email ? `<div style="font-size:11px">${co.email}</div>` : ''}
-    ${co.address ? `<div style="font-size:11px;color:#555;margin-top:2px">${co.address}</div>` : ''}
-    <div style="font-size:12px;margin-top:6px">
-      Receipt No: <strong>${sale.invoice_number}</strong> &nbsp;|&nbsp; Date: <strong>${sale.date}</strong>
-    </div>
-  </div>
-  <div class="info">
-    <div><strong>Customer:</strong> ${custName}</div>
-    <div><strong>Salesperson:</strong> ${sale.salesperson_name ?? '—'}</div>
-    ${custPhone ? `<div><strong>Phone:</strong> ${custPhone}</div>` : '<div></div>'}
-    <div><strong>Payment:</strong> ${(sale.payment_method ?? '—').toUpperCase()}</div>
-    ${custAddr ? `<div style="grid-column:span 2"><strong>Address:</strong> ${custAddr}</div>` : ''}
-    <div><strong>Channel:</strong> ${(sale.sales_channel ?? '—').replace('_', ' ')}</div>
-    <div><strong>Type:</strong> ${sale.type}</div>
-  </div>
-  <table>
-    <thead><tr><th>Model</th><th>Storage</th><th>Colour</th><th>Grade</th><th>IMEI</th><th>Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <table class="totals">
-    <tr><td>Subtotal</td><td style="text-align:right">₦${sub.toLocaleString()}</td></tr>
-    ${disc > 0 ? `<tr><td>Discount</td><td style="text-align:right;color:#16a34a">-₦${disc.toLocaleString()}</td></tr>` : ''}
-    ${del > 0 ? `<tr><td>Delivery Fee</td><td style="text-align:right">₦${del.toLocaleString()}</td></tr>` : ''}
-    ${tax > 0 ? `<tr><td>Tax</td><td style="text-align:right">₦${tax.toLocaleString()}</td></tr>` : ''}
-    <tr class="grand"><td>GRAND TOTAL</td><td style="text-align:right">₦${total.toLocaleString()}</td></tr>
-    <tr><td>Amount Paid</td><td style="text-align:right;color:#16a34a">₦${paid.toLocaleString()}</td></tr>
-    <tr style="font-weight:700;color:${bal > 0 ? '#dc2626' : '#16a34a'}">
-      <td>Outstanding Balance</td><td style="text-align:right">₦${bal.toLocaleString()}</td>
-    </tr>
-  </table>
-  ${co.bankDetails ? `<div style="margin:10px 0;padding:8px 12px;background:#f8f8f8;border:1px solid #e5e7eb;border-radius:6px;font-size:10px;white-space:pre-wrap">${co.bankDetails}</div>` : ''}
-  <div class="footer">${co.receiptNote}</div>
-  <div class="noPrint" style="text-align:center;margin-top:14px">
-    <button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px">🖨 Print</button>
-  </div>
-</body></html>`
-
-  const w = window.open('', '_blank', 'width=720,height=820')
-  if (!w) { toast.error('Pop-ups blocked — please allow pop-ups to print'); return }
-  w.document.write(html)
-  w.document.close()
-}
 
 interface LineItem { device: Device; model: PhoneModel | undefined; unit_price: string }
 
 export default function Sales() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [showNew, setShowNew] = useState(false)
-  const [paymentSale, setPaymentSale] = useState<Sale | null>(null)
-  const [payAmount, setPayAmount] = useState('')
 
   const { data: sales = [] } = useQuery({ queryKey: ['sales'], queryFn: () => getSales().then(r => r.data) })
   const { data: customers = [] } = useQuery({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) })
   const { data: sellable = [] } = useQuery({ queryKey: ['sellable-devices'], queryFn: () => getSellableDevices().then(r => r.data) })
   const { data: phoneModels = [] } = useQuery({ queryKey: ['phone-models'], queryFn: () => getPhoneModels().then(r => r.data) })
 
-  const payMut = useMutation({
-    mutationFn: ({ id, amount }: { id: string; amount: string }) =>
-      addPayment(id, { amount: parseFloat(amount) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sales'] })
-      setPaymentSale(null)
-      toast.success('Payment recorded')
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.detail ?? 'Error'),
-  })
-
   return (
     <div>
       <PageHeader title="Sales" action={<Btn onClick={() => setShowNew(true)}>+ New Sale</Btn>} />
       <Card>
-        <Table headers={['Invoice', 'Customer', 'Type', 'Salesperson', 'Channel', 'Total', 'Paid', 'Balance', 'Status', 'Date', '']}>
+        <Table headers={['Invoice', 'Customer', 'Type', 'Salesperson', 'Channel', 'Total', 'Paid', 'Balance', 'Status', 'Date']}>
           {(sales as Sale[]).map(sale => (
-            <TR key={sale.id}>
-              <TD>{sale.invoice_number}</TD>
+            <TR key={sale.id}
+              onClick={() => navigate(`/sales/${sale.id}`)}
+              style={{ cursor: 'pointer' }}
+            >
+              <TD style={{ color: '#2563eb', fontWeight: 600 }}>{sale.invoice_number}</TD>
               <TD>{sale.customer?.name ?? '—'}</TD>
               <TD style={{ textTransform: 'capitalize' }}>{sale.type}</TD>
               <TD>{sale.salesperson_name ?? '—'}</TD>
@@ -148,16 +51,6 @@ export default function Sales() {
                 </span>
               </TD>
               <TD>{sale.date}</TD>
-              <TD>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn size="sm" variant="secondary" onClick={() => { setPaymentSale(sale); setPayAmount('') }}>
-                    + Pay
-                  </Btn>
-                  <Btn size="sm" variant="ghost" onClick={() => printReceipt(sale)}>
-                    🖨
-                  </Btn>
-                </div>
-              </TD>
             </TR>
           ))}
         </Table>
@@ -176,44 +69,10 @@ export default function Sales() {
             qc.invalidateQueries({ queryKey: ['sales'] })
             qc.invalidateQueries({ queryKey: ['sellable-devices'] })
             setShowNew(false)
-            printReceipt(sale)
+            navigate(`/sales/${sale.id}`)
           }}
         />
       )}
-
-      {paymentSale && (
-        <Overlay onClose={() => setPaymentSale(null)}>
-          <h3 style={{ margin: '0 0 12px' }}>Add Payment — {paymentSale.invoice_number}</h3>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 14px' }}>
-            Balance due: <strong style={{ color: '#dc2626' }}>₦{fmt(paymentSale.balance)}</strong>
-          </p>
-          <Input label="Amount (₦)" type="number" value={payAmount}
-            onChange={e => setPayAmount(e.target.value)} placeholder="0" />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-            <Btn variant="secondary" onClick={() => setPaymentSale(null)}>Cancel</Btn>
-            <Btn
-              disabled={!payAmount || parseFloat(payAmount) <= 0 || payMut.isPending}
-              onClick={() => payMut.mutate({ id: paymentSale.id, amount: payAmount })}
-            >
-              Record Payment
-            </Btn>
-          </div>
-        </Overlay>
-      )}
-    </div>
-  )
-}
-
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999,
-    }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 28, minWidth: 360, maxWidth: 480 }}
-           onClick={e => e.stopPropagation()}>
-        {children}
-      </div>
     </div>
   )
 }
@@ -233,15 +92,12 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
 
   const [saleType, setSaleType] = useState('retail')
   const [salesperson, setSalesperson] = useState('')
-  const [payMethod, setPayMethod] = useState('cash')
   const [salesChannel, setSalesChannel] = useState('walk_in')
   const [saleDate, setSaleDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
 
-  const [tax, setTax] = useState('0')
   const [discount, setDiscount] = useState('0')
   const [deliveryFee, setDeliveryFee] = useState('0')
-  const [amountPaid, setAmountPaid] = useState('0')
 
   const [imeiInput, setImeiInput] = useState('')
   const [imeiError, setImeiError] = useState('')
@@ -254,15 +110,11 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
     onError: (e: any) => toast.error(e?.response?.data?.detail ?? 'Failed to create sale'),
   })
 
-  // Computed totals
   const totalQty = lineItems.length
   const subtotal = lineItems.reduce((s, i) => s + (parseFloat(i.unit_price) || 0), 0)
   const disc = parseFloat(discount) || 0
   const delFee = parseFloat(deliveryFee) || 0
-  const taxAmt = parseFloat(tax) || 0
-  const grandTotal = subtotal - disc + delFee + taxAmt
-  const amtPaidNum = parseFloat(amountPaid) || 0
-  const balanceDue = grandTotal - amtPaidNum
+  const grandTotal = subtotal - disc + delFee
 
   const scanImei = () => {
     const imei = imeiInput.trim()
@@ -308,12 +160,10 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
       customer_address: custMode === 'new' && custAddress.trim() ? custAddress.trim() : undefined,
       type: saleType,
       salesperson_name: salesperson.trim() || undefined,
-      payment_method: payMethod,
       sales_channel: salesChannel,
-      tax: taxAmt,
       discount: disc,
       delivery_fee: delFee,
-      amount_paid: amtPaidNum,
+      amount_paid: 0,
       date: saleDate,
       notes: notes.trim() || undefined,
       line_items: lineItems.map(i => ({
@@ -398,15 +248,6 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
               <input style={S.field} value={salesperson} onChange={e => setSalesperson(e.target.value)} placeholder="Staff name" />
             </div>
             <div>
-              <label style={S.label}>Payment Method</label>
-              <select style={S.field} value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-                <option value="cash">Cash</option>
-                <option value="transfer">Transfer</option>
-                <option value="pos">POS</option>
-                <option value="credit">Credit</option>
-              </select>
-            </div>
-            <div>
               <label style={S.label}>Sales Channel</label>
               <select style={S.field} value={salesChannel} onChange={e => setSalesChannel(e.target.value)}>
                 <option value="walk_in">Walk-in</option>
@@ -426,9 +267,17 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
               <input style={S.field} type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
             </div>
             <div>
-              <label style={S.label}>Notes</label>
-              <input style={S.field} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
+              <label style={S.label}>Discount (₦)</label>
+              <input style={S.field} type="number" value={discount} onChange={e => setDiscount(e.target.value)} placeholder="0" />
             </div>
+            <div>
+              <label style={S.label}>Delivery Fee (₦)</label>
+              <input style={S.field} type="number" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)} placeholder="0" />
+            </div>
+          </div>
+          <div>
+            <label style={S.label}>Notes</label>
+            <input style={{ ...S.field, marginBottom: 0 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
           </div>
         </div>
 
@@ -502,52 +351,22 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
           )}
         </div>
 
-        {/* ── Totals ── */}
-        <div style={{ ...S.section, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 28px' }}>
-          <div>
-            <strong style={{ fontSize: 13, display: 'block', marginBottom: 10 }}>Adjustments</strong>
-            <div style={S.grid2}>
-              <div>
-                <label style={S.label}>Discount (₦)</label>
-                <input style={S.field} type="number" value={discount} onChange={e => setDiscount(e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <label style={S.label}>Delivery Fee (₦)</label>
-                <input style={S.field} type="number" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <label style={S.label}>Tax (₦)</label>
-                <input style={{ ...S.field, marginBottom: 0 }} type="number" value={tax} onChange={e => setTax(e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <label style={S.label}>Amount Paid (₦)</label>
-                <input style={{ ...S.field, marginBottom: 0 }} type="number" value={amountPaid} onChange={e => setAmountPaid(e.target.value)} placeholder="0" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <strong style={{ fontSize: 13, display: 'block', marginBottom: 10 }}>Summary</strong>
+        {/* ── Summary ── */}
+        <div style={{ ...S.section, display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ minWidth: 260 }}>
             {[
-              { lbl: 'Total Items', val: `${totalQty}`, col: '' },
-              { lbl: 'Subtotal', val: `₦${subtotal.toLocaleString()}`, col: '' },
-              { lbl: 'Discount', val: `-₦${disc.toLocaleString()}`, col: disc > 0 ? '#16a34a' : '' },
-              { lbl: 'Delivery Fee', val: `₦${delFee.toLocaleString()}`, col: '' },
-              { lbl: 'Tax', val: `₦${taxAmt.toLocaleString()}`, col: '' },
+              { lbl: 'Total Items', val: `${totalQty}` },
+              { lbl: 'Subtotal', val: `₦${subtotal.toLocaleString()}` },
+              { lbl: 'Discount', val: `-₦${disc.toLocaleString()}` },
+              { lbl: 'Delivery Fee', val: `₦${delFee.toLocaleString()}` },
             ].map(r => (
-              <div key={r.lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5, color: r.col || '#64748b' }}>
+              <div key={r.lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5, color: '#64748b' }}>
                 <span>{r.lbl}</span><span>{r.val}</span>
               </div>
             ))}
             <div style={{ borderTop: '2px solid #e2e8f0', marginTop: 8, paddingTop: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16 }}>
                 <span>Grand Total</span><span>₦{grandTotal.toLocaleString()}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 5, color: '#16a34a' }}>
-                <span>Amount Paid</span><span>₦{amtPaidNum.toLocaleString()}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginTop: 4, fontWeight: 600, color: balanceDue > 0 ? '#dc2626' : '#16a34a' }}>
-                <span>Balance Due</span><span>₦{balanceDue.toLocaleString()}</span>
               </div>
             </div>
           </div>
@@ -556,7 +375,7 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
           <Btn disabled={mut.isPending} onClick={submit}>
-            {mut.isPending ? 'Saving…' : '✓ Create Sale & Print Receipt'}
+            {mut.isPending ? 'Saving…' : '✓ Create Sale'}
           </Btn>
         </div>
       </div>
