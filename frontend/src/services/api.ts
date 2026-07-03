@@ -103,7 +103,7 @@ export const createExpense = (data: unknown) => api.post('/expenses', data)
 export const updateExpense = (id: string, data: unknown) => api.patch(`/expenses/${id}`, data)
 export const deleteExpense = (id: string) => api.delete(`/expenses/${id}`)
 
-// Reports
+// Reports — existing
 export const getReconciliation = () => api.get('/reports/reconciliation')
 export const getInventoryValuation = () => api.get('/reports/inventory-valuation')
 export const getWIPValue = () => api.get('/reports/wip-value')
@@ -113,3 +113,12 @@ export const getReturnsAnalysis = () => api.get('/reports/returns-analysis')
 export const getLowStockAlerts = () => api.get('/reports/low-stock-alerts')
 export const getYieldConversion = () => api.get('/reports/yield-conversion')
 export const getExpensesSummary = (params?: Record<string, string>) => api.get('/reports/expenses-summary', { params })
+// Reports — new
+export const getInventoryReport = (params?: Record<string, string>) => api.get('/reports/inventory', { params })
+export const getPurchaseReport = (params?: Record<string, string>) => api.get('/reports/purchases', { params })
+export const getSalesDetailReport = (params?: Record<string, string>) => api.get('/reports/sales-detail', { params })
+export const getRefurbReport = (params?: Record<string, string>) => api.get('/reports/refurb-report', { params })
+export const getReturnsDetailReport = (params?: Record<string, string>) => api.get('/reports/returns-detail', { params })
+export const getOperationsSummary = (params?: Record<string, string>) => api.get('/reports/operations-summary', { params })
+export const getMySales = (params?: Record<string, string>) => api.get('/reports/my-sales', { params })
+export const getMyRefurb = (params?: Record<string, string>) => api.get('/reports/my-refurb', { params })
