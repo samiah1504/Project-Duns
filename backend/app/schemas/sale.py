@@ -1,4 +1,5 @@
-from datetime import datetime, date
+from datetime import datetime
+from datetime import date as date_type
 from decimal import Decimal
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel
@@ -62,7 +63,7 @@ class SaleCreate(BaseModel):
     discount: Decimal = Decimal("0.00")
     delivery_fee: Decimal = Decimal("0.00")
     amount_paid: Decimal = Decimal("0.00")
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     notes: Optional[str] = None
     line_items: List[SaleLineItemCreate]
 
@@ -70,14 +71,14 @@ class SaleCreate(BaseModel):
 class AddPaymentRequest(BaseModel):
     amount: Decimal
     payment_method: Optional[str] = None
-    payment_date: Optional[date] = None
+    payment_date: Optional[date_type] = None
     notes: Optional[str] = None
 
 
 class SalePaymentCreate(BaseModel):
     amount: Decimal
     payment_method: Optional[str] = None
-    payment_date: Optional[date] = None
+    payment_date: Optional[date_type] = None
     notes: Optional[str] = None
 
 
@@ -86,7 +87,7 @@ class SalePaymentOut(BaseModel):
     sale_id: str
     amount: Decimal
     payment_method: Optional[str] = None
-    payment_date: date
+    payment_date: date_type
     notes: Optional[str] = None
     created_at: datetime
     model_config = {"from_attributes": True}
@@ -105,7 +106,7 @@ class SaleOut(BaseModel):
     amount_paid: Decimal
     balance: Decimal
     payment_status: PaymentStatus
-    date: date
+    date: date_type
     created_by_user_id: str
     salesperson_name: Optional[str] = None
     payment_method: Optional[str] = None
