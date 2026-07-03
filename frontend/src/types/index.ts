@@ -7,6 +7,8 @@ export interface User {
   role: UserRole
   assigned_location?: string
   is_active: boolean
+  allowed_modules?: string | null
+  effective_modules: string[]
   created_at: string
 }
 

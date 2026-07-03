@@ -2,20 +2,21 @@ import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
+// module key → nav entry
 const NAV = [
-  { to: '/', label: 'Dashboard', roles: ['ADMIN', 'INVENTORY', 'SALES', 'ENGINEER', 'RECORDS'] },
-  { to: '/devices', label: 'Devices', roles: ['ADMIN', 'INVENTORY', 'SALES', 'ENGINEER'] },
-  { to: '/intake', label: 'Intake (POs)', roles: ['ADMIN', 'INVENTORY'] },
-  { to: '/refurb', label: 'Refurb Jobs', roles: ['ADMIN', 'ENGINEER', 'INVENTORY'] },
-  { to: '/sales', label: 'Sales', roles: ['ADMIN', 'SALES'] },
-  { to: '/customers', label: 'Customers', roles: ['ADMIN', 'SALES'] },
-  { to: '/parts', label: 'Parts', roles: ['ADMIN', 'INVENTORY', 'ENGINEER'] },
-  { to: '/returns', label: 'Returns', roles: ['ADMIN', 'SALES'] },
-  { to: '/reports', label: 'Reports', roles: ['ADMIN', 'RECORDS'] },
-  { to: '/phone-models', label: 'Phone Models', roles: ['ADMIN', 'INVENTORY'] },
-  { to: '/suppliers', label: 'Suppliers', roles: ['ADMIN', 'INVENTORY'] },
-  { to: '/users', label: 'Users', roles: ['ADMIN'] },
-  { to: '/settings', label: '⚙ Settings', roles: ['ADMIN'] },
+  { to: '/', label: 'Dashboard', module: 'dashboard' },
+  { to: '/devices', label: 'Devices', module: 'devices' },
+  { to: '/intake', label: 'Intake (POs)', module: 'intake' },
+  { to: '/refurb', label: 'Refurb Jobs', module: 'refurb' },
+  { to: '/sales', label: 'Sales', module: 'sales' },
+  { to: '/customers', label: 'Customers', module: 'customers' },
+  { to: '/parts', label: 'Parts', module: 'parts' },
+  { to: '/returns', label: 'Returns', module: 'returns' },
+  { to: '/reports', label: 'Reports', module: 'reports' },
+  { to: '/phone-models', label: 'Phone Models', module: 'phone_models' },
+  { to: '/suppliers', label: 'Suppliers', module: 'suppliers' },
+  { to: '/users', label: 'Users', module: 'users' },
+  { to: '/settings', label: '⚙ Settings', module: 'settings' },
 ]
 
 const STATUS_COLORS: Record<string, string> = {
@@ -56,7 +57,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const location = useLocation()
 
-  const visibleNav = NAV.filter((n) => user && n.roles.includes(user.role))
+  const visibleNav = NAV.filter((n) => user && (user.effective_modules ?? []).includes(n.module))
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>

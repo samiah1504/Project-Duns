@@ -87,6 +87,7 @@ export const updateSupplier = (id: string, data: unknown) => api.patch(`/supplie
 export const getUsers = () => api.get('/users')
 export const createUser = (data: unknown) => api.post('/users', data)
 export const updateUser = (id: string, data: unknown) => api.patch(`/users/${id}`, data)
+export const updateUserPermissions = (id: string, data: unknown) => api.put(`/users/${id}/permissions`, data)
 
 // Returns
 export const getReturns = () => api.get('/returns')

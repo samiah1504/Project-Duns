@@ -5,12 +5,16 @@ from typing import Optional
 
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.schemas.user import UserCreate, UserUpdate, UserOut
+from app.schemas.user import UserCreate, UserUpdate, UserOut, UserPermissionsUpdate
 from app.core.auth import hash_password, get_current_user
 from app.core.permissions import admin_only
 from app.core.exceptions import NotFoundError, ConflictError
 
 router = APIRouter()
+
+
+def _out(user: User) -> UserOut:
+    return UserOut.from_user(user)
 
 
 @router.get("", response_model=list[UserOut])
@@ -19,7 +23,7 @@ async def list_users(
     _: User = Depends(admin_only()),
 ):
     result = await db.execute(select(User).order_by(User.name))
-    return result.scalars().all()
+    return [_out(u) for u in result.scalars().all()]
 
 
 @router.post("", response_model=UserOut, status_code=201)
@@ -41,7 +45,7 @@ async def create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return user
+    return _out(user)
 
 
 @router.get("/{user_id}", response_model=UserOut)
@@ -57,7 +61,7 @@ async def get_user(
     user = result.scalar_one_or_none()
     if not user:
         raise NotFoundError("User not found")
-    return user
+    return _out(user)
 
 
 @router.patch("/{user_id}", response_model=UserOut)
@@ -83,4 +87,25 @@ async def update_user(
         user.hashed_password = hash_password(body.password)
     await db.commit()
     await db.refresh(user)
-    return user
+    return _out(user)
+
+
+@router.put("/{user_id}/permissions", response_model=UserOut)
+async def update_user_permissions(
+    user_id: str,
+    body: UserPermissionsUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(admin_only()),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise NotFoundError("User not found")
+    if body.allowed_modules is None:
+        # Reset to role defaults
+        user.allowed_modules = None
+    else:
+        user.allowed_modules = ",".join(body.allowed_modules)
+    await db.commit()
+    await db.refresh(user)
+    return _out(user)

@@ -20,6 +20,12 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
+export function useHasModule(module: string): boolean {
+  const { user } = useContext(AuthContext)
+  if (!user) return false
+  return (user.effective_modules ?? []).includes(module)
+}
+
 export function useAuthProvider() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
