@@ -29,7 +29,7 @@ async def list_pos(
 ):
     q = select(PurchaseOrder).options(
         selectinload(PurchaseOrder.line_items),
-        selectinload(PurchaseOrder.devices),
+        selectinload(PurchaseOrder.devices).selectinload(Device.model),
     )
     if status:
         q = q.where(PurchaseOrder.status == status)
