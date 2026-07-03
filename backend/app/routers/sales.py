@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from pydantic import BaseModel
 from decimal import Decimal
 
 from app.database import get_db
-from app.models.sale import Sale, PaymentStatus
+from app.models.sale import Sale, SaleLineItem, PaymentStatus
 from app.schemas.sale import SaleCreate, SaleOut
 from app.core.permissions import sales_or_admin, any_authenticated
 from app.core.exceptions import NotFoundError, BadRequestError
@@ -21,6 +22,18 @@ class AddPaymentBody(BaseModel):
     notes: Optional[str] = None
 
 
+def _sale_query():
+    return select(Sale).options(selectinload(Sale.line_items))
+
+
+async def _fetch_sale(db: AsyncSession, sale_id: str) -> Sale:
+    result = await db.execute(_sale_query().where(Sale.id == sale_id))
+    sale = result.scalar_one_or_none()
+    if not sale:
+        raise NotFoundError("Sale not found")
+    return sale
+
+
 @router.get("", response_model=list[SaleOut])
 async def list_sales(
     customer_id: Optional[str] = None,
@@ -28,7 +41,7 @@ async def list_sales(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(any_authenticated()),
 ):
-    q = select(Sale)
+    q = _sale_query()
     if customer_id:
         q = q.where(Sale.customer_id == customer_id)
     if payment_status:
@@ -54,8 +67,7 @@ async def create_new_sale(
         notes=body.notes,
     )
     await db.commit()
-    await db.refresh(sale)
-    return sale
+    return await _fetch_sale(db, sale.id)
 
 
 @router.get("/{sale_id}", response_model=SaleOut)
@@ -64,11 +76,7 @@ async def get_sale(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(any_authenticated()),
 ):
-    result = await db.execute(select(Sale).where(Sale.id == sale_id))
-    sale = result.scalar_one_or_none()
-    if not sale:
-        raise NotFoundError("Sale not found")
-    return sale
+    return await _fetch_sale(db, sale_id)
 
 
 @router.post("/{sale_id}/add-payment", response_model=SaleOut)
@@ -78,10 +86,7 @@ async def add_payment(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(sales_or_admin()),
 ):
-    result = await db.execute(select(Sale).where(Sale.id == sale_id))
-    sale = result.scalar_one_or_none()
-    if not sale:
-        raise NotFoundError("Sale not found")
+    sale = await _fetch_sale(db, sale_id)
     if body.amount <= Decimal("0"):
         raise BadRequestError("Payment amount must be positive")
 
@@ -92,13 +97,10 @@ async def add_payment(
     else:
         sale.payment_status = PaymentStatus.PARTIAL
 
-    # update customer balance
     from app.models.customer import Customer
-    cust_result = await db.execute(select(Customer).where(Customer.id == sale.customer_id))
-    customer = cust_result.scalar_one_or_none()
-    if customer:
-        customer.current_balance = max(Decimal("0"), customer.current_balance - body.amount)
+    cust = (await db.execute(select(Customer).where(Customer.id == sale.customer_id))).scalar_one_or_none()
+    if cust:
+        cust.current_balance = max(Decimal("0"), cust.current_balance - body.amount)
 
     await db.commit()
-    await db.refresh(sale)
-    return sale
+    return await _fetch_sale(db, sale.id)
