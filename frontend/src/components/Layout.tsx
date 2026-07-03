@@ -13,6 +13,7 @@ const NAV = [
   { to: '/parts', label: 'Parts', module: 'parts' },
   { to: '/returns', label: 'Returns', module: 'returns' },
   { to: '/reports', label: 'Reports', module: 'reports' },
+  { to: '/expenses', label: 'Expenses', module: 'expenses' },
   { to: '/phone-models', label: 'Phone Models', module: 'phone_models' },
   { to: '/suppliers', label: 'Suppliers', module: 'suppliers' },
   { to: '/users', label: 'Users', module: 'users' },

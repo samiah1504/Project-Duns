@@ -94,6 +94,12 @@ export const getReturns = () => api.get('/returns')
 export const createReturn = (data: unknown) => api.post('/returns', data)
 export const resolveReturn = (id: string, data: unknown) => api.post(`/returns/${id}/resolve`, data)
 
+// Expenses
+export const getExpenses = (params?: Record<string, string>) => api.get('/expenses', { params })
+export const createExpense = (data: unknown) => api.post('/expenses', data)
+export const updateExpense = (id: string, data: unknown) => api.patch(`/expenses/${id}`, data)
+export const deleteExpense = (id: string) => api.delete(`/expenses/${id}`)
+
 // Reports
 export const getReconciliation = () => api.get('/reports/reconciliation')
 export const getInventoryValuation = () => api.get('/reports/inventory-valuation')
@@ -103,3 +109,4 @@ export const getSalesSummary = () => api.get('/reports/sales-summary')
 export const getReturnsAnalysis = () => api.get('/reports/returns-analysis')
 export const getLowStockAlerts = () => api.get('/reports/low-stock-alerts')
 export const getYieldConversion = () => api.get('/reports/yield-conversion')
+export const getExpensesSummary = (params?: Record<string, string>) => api.get('/reports/expenses-summary', { params })

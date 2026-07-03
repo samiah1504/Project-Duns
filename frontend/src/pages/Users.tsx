@@ -15,6 +15,7 @@ const ALL_MODULES: { key: string; label: string }[] = [
   { key: 'parts', label: 'Parts' },
   { key: 'returns', label: 'Returns' },
   { key: 'reports', label: 'Reports' },
+  { key: 'expenses', label: 'Warehouse Expenses' },
   { key: 'phone_models', label: 'Phone Models' },
   { key: 'suppliers', label: 'Suppliers' },
   { key: 'users', label: 'User Management' },

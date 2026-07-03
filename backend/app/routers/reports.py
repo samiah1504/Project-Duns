@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+from datetime import date as date_type
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -12,6 +15,7 @@ from app.services.reports_service import (
     get_returns_analysis,
     get_low_stock_alerts,
     get_yield_conversion,
+    get_expenses_summary,
 )
 from app.models.user import User
 
@@ -80,3 +84,13 @@ async def yield_conversion(
     _: User = Depends(records_or_admin()),
 ):
     return await get_yield_conversion(db)
+
+
+@router.get("/expenses-summary")
+async def expenses_summary(
+    date_from: Optional[date_type] = Query(None),
+    date_to: Optional[date_type] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(records_or_admin()),
+):
+    return await get_expenses_summary(db, date_from=date_from, date_to=date_to)

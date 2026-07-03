@@ -1,3 +1,4 @@
+from datetime import date as date_type
 from decimal import Decimal
 from typing import Optional
 
@@ -5,11 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case
 
 from app.models.device import Device, DeviceStatus
+from app.models.expense import Expense
 from app.models.part import Part
 from app.models.refurb_job import RefurbJob, JobStatus, JobOutcome
 from app.models.sale import Sale, SaleType
 from app.models.return_rma import ReturnRMA, RestockOutcome
 from app.models.user import User
+from app.schemas.expense import ExpensesSummaryReport, ExpenseSummaryItem
 from app.schemas.reports import (
     ReconciliationReport,
     InventoryValuationReport,
@@ -259,4 +262,40 @@ async def get_yield_conversion(db: AsyncSession) -> YieldConversionReport:
         scrapped=scrapped,
         yield_rate_percent=round(yield_rate, 2),
         scrap_rate_percent=round(scrap_rate, 2),
+    )
+
+
+async def get_expenses_summary(
+    db: AsyncSession,
+    date_from: Optional[date_type] = None,
+    date_to: Optional[date_type] = None,
+) -> ExpensesSummaryReport:
+    q = select(Expense)
+    if date_from:
+        q = q.where(Expense.date >= date_from)
+    if date_to:
+        q = q.where(Expense.date <= date_to)
+    result = await db.execute(q)
+    expenses = result.scalars().all()
+
+    totals_by_title: dict[str, dict] = {}
+    for e in expenses:
+        key = e.title
+        if key not in totals_by_title:
+            totals_by_title[key] = {"count": 0, "total": Decimal("0.00")}
+        totals_by_title[key]["count"] += 1
+        totals_by_title[key]["total"] += e.amount
+
+    items = [
+        ExpenseSummaryItem(title=k, count=v["count"], total=v["total"])
+        for k, v in sorted(totals_by_title.items(), key=lambda x: x[1]["total"], reverse=True)
+    ]
+    grand_total = sum(e.amount for e in expenses)
+
+    return ExpensesSummaryReport(
+        period_start=date_from.isoformat() if date_from else None,
+        period_end=date_to.isoformat() if date_to else None,
+        total_expenses=grand_total if expenses else Decimal("0.00"),
+        expense_count=len(expenses),
+        items=items,
     )

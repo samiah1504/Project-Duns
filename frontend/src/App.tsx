@@ -20,6 +20,7 @@ import Suppliers from './pages/Suppliers'
 import PhoneModels from './pages/PhoneModels'
 import Settings from './pages/Settings'
 import SaleDetail from './pages/SaleDetail'
+import Expenses from './pages/Expenses'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } })
 
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/parts" element={<ProtectedLayout><Parts /></ProtectedLayout>} />
             <Route path="/returns" element={<ProtectedLayout><Returns /></ProtectedLayout>} />
             <Route path="/reports" element={<ProtectedLayout><Reports /></ProtectedLayout>} />
+            <Route path="/expenses" element={<ProtectedLayout><Expenses /></ProtectedLayout>} />
             <Route path="/users" element={<ProtectedLayout><Users /></ProtectedLayout>} />
             <Route path="/suppliers" element={<ProtectedLayout><Suppliers /></ProtectedLayout>} />
             <Route path="/phone-models" element={<ProtectedLayout><PhoneModels /></ProtectedLayout>} />

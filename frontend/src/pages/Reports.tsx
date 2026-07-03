@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getReconciliation, getInventoryValuation, getWIPValue,
   getEngineerPerformance, getSalesSummary, getReturnsAnalysis,
-  getLowStockAlerts, getYieldConversion
+  getLowStockAlerts, getYieldConversion, getExpensesSummary,
 } from '../services/api'
 import { Card, fmt } from '../components/Layout'
 
@@ -32,6 +32,7 @@ export default function Reports() {
   const returns_ = useQuery({ queryKey: ['returns-analysis'], queryFn: () => getReturnsAnalysis().then(r => r.data) })
   const lowStock = useQuery({ queryKey: ['low-stock'], queryFn: () => getLowStockAlerts().then(r => r.data) })
   const yield_ = useQuery({ queryKey: ['yield'], queryFn: () => getYieldConversion().then(r => r.data) })
+  const expSummary = useQuery({ queryKey: ['expenses-summary'], queryFn: () => getExpensesSummary().then(r => r.data) })
 
   return (
     <div style={{ padding: 28, maxWidth: 1000 }}>
@@ -140,6 +141,24 @@ export default function Reports() {
                     </div>
                   ))
               }
+            </Card>
+          </Section>
+
+          <Section title="WAREHOUSE EXPENSES">
+            <Card style={{ borderLeft: '4px solid #ef4444' }}>
+              <KV label="Total Expenses" value={expSummary.data ? fmt(expSummary.data.total_expenses) : '—'} color="#ef4444" />
+              <KV label="Number of Entries" value={expSummary.data?.expense_count ?? '—'} />
+              <div style={{ marginTop: 10 }}>
+                {expSummary.data?.items?.slice(0, 8).map((item: { title: string; count: number; total: string }) => (
+                  <div key={item.title} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
+                    <span style={{ color: '#374151' }}>{item.title}</span>
+                    <span style={{ fontWeight: 600, color: '#dc2626' }}>{fmt(item.total)}</span>
+                  </div>
+                ))}
+                {(expSummary.data?.items?.length ?? 0) === 0 && (
+                  <div style={{ color: '#94a3b8', fontSize: 13 }}>No expenses recorded.</div>
+                )}
+              </div>
             </Card>
           </Section>
         </div>

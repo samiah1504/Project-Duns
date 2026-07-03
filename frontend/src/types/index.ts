@@ -227,6 +227,19 @@ export interface RefurbJobPart {
   created_at: string
 }
 
+export interface Expense {
+  id: string
+  title: string
+  description?: string
+  amount: string
+  date: string
+  branch?: string
+  entered_by_user_id: string
+  entered_by?: { id: string; name: string; role: string }
+  created_at: string
+  updated_at: string
+}
+
 export interface AuditLog {
   id: string
   device_id?: string

@@ -13,6 +13,7 @@ ALL_MODULES = [
     "parts",
     "returns",
     "reports",
+    "expenses",
     "phone_models",
     "suppliers",
     "users",
@@ -29,6 +30,7 @@ MODULE_LABELS = {
     "parts": "Parts",
     "returns": "Returns",
     "reports": "Reports",
+    "expenses": "Warehouse Expenses",
     "phone_models": "Phone Models",
     "suppliers": "Suppliers",
     "users": "User Management",
@@ -40,7 +42,7 @@ ROLE_DEFAULTS: dict[str, list[str]] = {
     "INVENTORY": ["dashboard", "devices", "intake", "parts", "phone_models", "suppliers"],
     "SALES": ["dashboard", "devices", "sales", "customers", "returns"],
     "ENGINEER": ["dashboard", "devices", "refurb", "parts"],
-    "RECORDS": ["dashboard", "reports"],
+    "RECORDS": ["dashboard", "reports", "expenses"],
 }
 
 

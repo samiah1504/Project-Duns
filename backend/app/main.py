@@ -11,6 +11,7 @@ logger = logging.getLogger("tardmart")
 
 from app.database import engine, Base
 import app.models.sale_payment  # noqa: F401 — registers SalePayment with Base.metadata
+import app.models.expense       # noqa: F401 — registers Expense with Base.metadata
 
 
 @asynccontextmanager
@@ -64,7 +65,7 @@ app.add_middleware(
 # ── routers ──────────────────────────────────────────────────────────────────
 from app.routers import (
     auth, devices, parts, purchase_orders,
-    refurb_jobs, sales, customers, suppliers, users, returns, reports, phone_models,
+    refurb_jobs, sales, customers, suppliers, users, returns, reports, phone_models, expenses,
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -79,6 +80,7 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(returns.router, prefix="/api/returns", tags=["returns"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(phone_models.router, prefix="/api/phone-models", tags=["phone-models"])
+app.include_router(expenses.router, prefix="/api/expenses", tags=["expenses"])
 
 
 @app.get("/api/health")
