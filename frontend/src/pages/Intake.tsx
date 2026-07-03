@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import JsBarcode from 'jsbarcode'
+import { barcodeDataURL } from '../utils/barcode'
 import {
   getPurchaseOrders, getSuppliers, createPurchaseOrder,
   receivePurchaseOrder, getPODevices,
@@ -12,18 +12,6 @@ import {
 } from '../components/Layout'
 
 // ─── Barcode helpers ──────────────────────────────────────────────────────────
-
-function generateBarcodePNG(value: string): string {
-  const canvas = document.createElement('canvas')
-  JsBarcode(canvas, value, {
-    format: 'CODE128',
-    width: 2,
-    height: 60,
-    displayValue: false,
-    margin: 4,
-  })
-  return canvas.toDataURL('image/png')
-}
 
 interface LabelDevice {
   imei: string
@@ -41,7 +29,7 @@ function buildLabelHTML(devices: LabelDevice[]): string {
   })
 
   const labels = devices.map((d) => {
-    const barcodeSrc = generateBarcodePNG(d.imei)
+    const barcodeSrc = barcodeDataURL(d.imei)
     return `
       <div class="label">
         <div class="company">Tardmart Ventures</div>
@@ -359,7 +347,7 @@ export default function Intake() {
 
   const { data: suppliers = [] } = useQuery<Supplier[]>({
     queryKey: ['suppliers'],
-    queryFn: () => getSuppliers({}).then(r => r.data),
+    queryFn: () => getSuppliers().then(r => r.data),
   })
 
   const receiveMut = useMutation({
@@ -414,8 +402,8 @@ export default function Intake() {
             const deviceCount = po.line_items.filter(l => l.line_type === 'device').length
 
             return (
-              <>
-                <TR key={po.id} onClick={() => setExpandedPO(isExpanded ? null : po.id)}>
+              <Fragment key={po.id}>
+                <TR onClick={() => setExpandedPO(isExpanded ? null : po.id)}>
                   <TD><strong style={{ color: '#2563eb', fontFamily: 'monospace' }}>{po.po_number}</strong></TD>
                   <TD>{supplier?.name ?? <span style={{ color: '#94a3b8' }}>—</span>}</TD>
                   <TD>{po.date}</TD>
@@ -439,15 +427,13 @@ export default function Intake() {
                   </TD>
                 </TR>
                 {isExpanded && (
-                  <tr key={`${po.id}-expanded`}>
-                    <td colSpan={7} style={{
-                      background: '#f8fafc', borderBottom: '2px solid #e2e8f0',
-                    }}>
+                  <tr>
+                    <td colSpan={7} style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                       <PODevicesPanel poId={po.id} poNumber={po.po_number} />
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             )
           })}
         </Table>
