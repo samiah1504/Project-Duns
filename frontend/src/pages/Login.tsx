@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { login, getMe } from '../services/api'
+import { login } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const { setUser } = useAuth()
@@ -15,13 +16,17 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     try {
-      const res = await login(email, password)
+      const res = await login(username, password)
       localStorage.setItem('access_token', res.data.access_token)
-      const me = await getMe()
-      setUser(me.data)
-      navigate('/')
+      setUser(res.data.user)
+      if (res.data.user?.must_change_password) {
+        navigate('/change-password')
+      } else {
+        navigate('/')
+      }
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.message || 'Login failed'
+      const detail = err?.response?.data?.detail
+      const msg = Array.isArray(detail) ? detail.map((d: any) => d.msg).join(', ') : (detail || err?.message || 'Login failed')
       toast.error(String(msg))
     } finally {
       setLoading(false)
@@ -40,25 +45,36 @@ export default function Login() {
         </div>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>Email</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>Username</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none' }}
+              autoComplete="username"
+              style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
           <div style={{ marginBottom: 24 }}>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none' }}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                style={{ width: '100%', padding: '10px 40px 10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 16, padding: 0 }}
+              >
+                {showPassword ? '🙈' : '👁'}
+              </button>
+            </div>
           </div>
           <button
             type="submit"

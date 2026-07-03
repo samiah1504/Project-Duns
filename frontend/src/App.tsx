@@ -1,10 +1,11 @@
 import { createContext, useContext } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { useAuthProvider, AuthContext } from './hooks/useAuth'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import ChangePassword from './pages/ChangePassword'
 import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
 import DeviceDetail from './pages/DeviceDetail'
@@ -31,8 +32,12 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useContext(AuthContext)
+  const location = useLocation()
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#64748b' }}>Loading…</div>
   if (!user) return <Navigate to="/login" replace />
+  if (user.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
   return <Layout>{children}</Layout>
 }
 
@@ -44,6 +49,7 @@ export default function App() {
           <Toaster position="top-right" />
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/change-password" element={<ProtectedLayout><ChangePassword /></ProtectedLayout>} />
             <Route path="/" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
             <Route path="/devices" element={<ProtectedLayout><Devices /></ProtectedLayout>} />
             <Route path="/devices/new" element={<ProtectedLayout><Devices /></ProtectedLayout>} />

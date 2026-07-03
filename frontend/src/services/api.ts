@@ -25,10 +25,12 @@ api.interceptors.response.use(
 export default api
 
 // Auth
-export const login = (email: string, password: string) =>
-  api.post('/auth/login', new URLSearchParams({ username: email, password }), {
+export const login = (username: string, password: string) =>
+  api.post('/auth/login', new URLSearchParams({ username, password }), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   })
+
+export const changePassword = (data: unknown) => api.post('/auth/change-password', data)
 
 export const getMe = () => api.get('/auth/me')
 
@@ -88,6 +90,7 @@ export const getUsers = () => api.get('/users')
 export const createUser = (data: unknown) => api.post('/users', data)
 export const updateUser = (id: string, data: unknown) => api.patch(`/users/${id}`, data)
 export const updateUserPermissions = (id: string, data: unknown) => api.put(`/users/${id}/permissions`, data)
+export const resetUserPassword = (id: string, data: unknown) => api.post(`/users/${id}/reset-password`, data)
 
 // Returns
 export const getReturns = () => api.get('/returns')

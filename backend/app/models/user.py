@@ -24,12 +24,13 @@ class User(Base):
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    employee_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), nullable=False)
     assigned_location: Mapped[str | None] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Comma-separated list of allowed module keys; NULL = use role defaults
     allowed_modules: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -49,4 +50,7 @@ class User(Base):
     )
     returns_handled: Mapped[list["ReturnRMA"]] = relationship(
         "ReturnRMA", back_populates="handled_by_user", foreign_keys="ReturnRMA.handled_by_user_id"
+    )
+    expenses_entered: Mapped[list["Expense"]] = relationship(
+        "Expense", back_populates="entered_by", foreign_keys="Expense.entered_by_user_id"
     )

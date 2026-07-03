@@ -3,10 +3,12 @@ export type UserRole = 'ADMIN' | 'INVENTORY' | 'SALES' | 'ENGINEER' | 'RECORDS'
 export interface User {
   id: string
   name: string
-  email: string
+  username: string
+  employee_id?: string
   role: UserRole
   assigned_location?: string
   is_active: boolean
+  must_change_password?: boolean
   allowed_modules?: string | null
   effective_modules: string[]
   created_at: string
