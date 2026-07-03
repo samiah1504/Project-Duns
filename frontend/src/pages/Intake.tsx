@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { barcodeDataURL } from '../utils/barcode'
+import { getCompanySettings } from '../hooks/useCompanySettings'
 import {
   getPurchaseOrders, getSuppliers, createPurchaseOrder,
   receivePurchaseOrder, getPODevices,
@@ -24,6 +25,7 @@ interface LabelDevice {
 }
 
 function buildLabelHTML(devices: LabelDevice[]): string {
+  const co = getCompanySettings()
   const today = new Date().toLocaleDateString('en-NG', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
@@ -32,7 +34,7 @@ function buildLabelHTML(devices: LabelDevice[]): string {
     const barcodeSrc = barcodeDataURL(d.imei)
     return `
       <div class="label">
-        <div class="company">Tardmart Ventures</div>
+        <div class="company">${co.name}</div>
         <div class="model-line">${d.brand} ${d.model_name}</div>
         <div class="specs">
           <span class="spec-item">💾 ${d.storage || '—'}</span>

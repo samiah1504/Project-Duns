@@ -4,11 +4,13 @@ import toast from 'react-hot-toast'
 import { getSales, createSale, addPayment, getCustomers, getSellableDevices, getPhoneModels } from '../services/api'
 import { Sale, Customer, Device, PhoneModel } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Input, fmt } from '../components/Layout'
+import { getCompanySettings } from '../hooks/useCompanySettings'
 
 const payColor = (s: string) => s === 'paid' ? '#16a34a' : s === 'partial' ? '#d97706' : '#dc2626'
 const payLabel = (s: string) => s.replace('_', ' ').toUpperCase()
 
 function printReceipt(sale: Sale) {
+  const co = getCompanySettings()
   const custName = sale.customer?.name ?? 'Walk-in Customer'
   const custPhone = sale.customer?.contact?.phone ?? ''
   const custAddr = sale.customer?.contact?.address ?? ''
@@ -49,8 +51,11 @@ function printReceipt(sale: Sale) {
     @media print{.noPrint{display:none}}
   </style></head><body>
   <div class="hdr">
-    <h1>TARDMART VENTURES</h1>
-    <div style="font-size:11px;margin-top:3px">Quality Refurbished Phones</div>
+    <h1>${co.name}</h1>
+    ${co.tagline ? `<div style="font-size:11px;margin-top:3px">${co.tagline}</div>` : ''}
+    ${co.phone ? `<div style="font-size:11px;margin-top:2px">📞 ${co.phone}</div>` : ''}
+    ${co.email ? `<div style="font-size:11px">${co.email}</div>` : ''}
+    ${co.address ? `<div style="font-size:11px;color:#555;margin-top:2px">${co.address}</div>` : ''}
     <div style="font-size:12px;margin-top:6px">
       Receipt No: <strong>${sale.invoice_number}</strong> &nbsp;|&nbsp; Date: <strong>${sale.date}</strong>
     </div>
@@ -79,7 +84,8 @@ function printReceipt(sale: Sale) {
       <td>Outstanding Balance</td><td style="text-align:right">₦${bal.toLocaleString()}</td>
     </tr>
   </table>
-  <div class="footer">Thank you for your business! All sales are final.</div>
+  ${co.bankDetails ? `<div style="margin:10px 0;padding:8px 12px;background:#f8f8f8;border:1px solid #e5e7eb;border-radius:6px;font-size:10px;white-space:pre-wrap">${co.bankDetails}</div>` : ''}
+  <div class="footer">${co.receiptNote}</div>
   <div class="noPrint" style="text-align:center;margin-top:14px">
     <button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px">🖨 Print</button>
   </div>

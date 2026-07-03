@@ -15,6 +15,7 @@ const NAV = [
   { to: '/phone-models', label: 'Phone Models', roles: ['ADMIN', 'INVENTORY'] },
   { to: '/suppliers', label: 'Suppliers', roles: ['ADMIN', 'INVENTORY'] },
   { to: '/users', label: 'Users', roles: ['ADMIN'] },
+  { to: '/settings', label: '⚙ Settings', roles: ['ADMIN'] },
 ]
 
 const STATUS_COLORS: Record<string, string> = {
