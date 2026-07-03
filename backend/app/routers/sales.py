@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from app.database import get_db
 from app.models.sale import Sale, SaleLineItem, PaymentStatus
+from app.models.device import Device
 from app.schemas.sale import SaleCreate, SaleOut
 from app.core.permissions import sales_or_admin, any_authenticated
 from app.core.exceptions import NotFoundError, BadRequestError
@@ -23,7 +24,15 @@ class AddPaymentBody(BaseModel):
 
 
 def _sale_query():
-    return select(Sale).options(selectinload(Sale.line_items))
+    return (
+        select(Sale)
+        .options(
+            selectinload(Sale.line_items)
+            .selectinload(SaleLineItem.device)
+            .selectinload(Device.model),
+            selectinload(Sale.customer),
+        )
+    )
 
 
 async def _fetch_sale(db: AsyncSession, sale_id: str) -> Sale:
@@ -59,10 +68,19 @@ async def create_new_sale(
     sale = await create_sale(
         db,
         customer_id=body.customer_id,
+        customer_name=body.customer_name,
+        customer_phone=body.customer_phone,
+        customer_address=body.customer_address,
         sale_type=body.type,
         line_items_data=body.line_items,
         created_by_user_id=current_user.id,
         tax=body.tax,
+        discount=body.discount,
+        delivery_fee=body.delivery_fee,
+        amount_paid=body.amount_paid,
+        salesperson_name=body.salesperson_name,
+        payment_method=body.payment_method,
+        sales_channel=body.sales_channel,
         sale_date=body.date,
         notes=body.notes,
     )

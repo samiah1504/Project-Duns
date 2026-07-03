@@ -137,14 +137,20 @@ export interface Sale {
   type: 'wholesale' | 'retail'
   subtotal: string
   tax: string
+  discount: string
+  delivery_fee: string
   total: string
   amount_paid: string
   balance: string
   payment_status: 'paid' | 'partial' | 'on_account' | 'unpaid'
   date: string
   created_by_user_id: string
+  salesperson_name?: string
+  payment_method?: string
+  sales_channel?: string
   notes?: string
   created_at: string
+  customer?: { id: string; name: string; contact?: Record<string, string> }
   line_items: SaleLineItem[]
 }
 
@@ -157,6 +163,11 @@ export interface SaleLineItem {
   unit_price: string
   line_total: string
   notes?: string
+  device?: {
+    imei: string
+    grade: string
+    model?: { brand: string; model_name: string; storage?: string; colour?: string }
+  }
 }
 
 export interface ReturnRMA {

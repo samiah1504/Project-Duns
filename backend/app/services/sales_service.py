@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from app.models.sale import Sale, SaleLineItem, SaleType, PaymentStatus
 from app.models.device import Device, DeviceStatus, DeviceLocation
 from app.models.part import Part
-from app.models.customer import Customer
+from app.models.customer import Customer, CustomerType
 from app.models.audit_log import ReferenceType
 from app.services.audit import write_audit
 from app.services.device_state_machine import validate_transition
@@ -33,36 +33,97 @@ def _compute_payment_status(total: Decimal, amount_paid: Decimal) -> PaymentStat
     return PaymentStatus.PARTIAL
 
 
+async def _resolve_customer(
+    db: AsyncSession,
+    customer_id: Optional[str],
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    customer_address: Optional[str],
+) -> Customer:
+    if customer_id:
+        result = await db.execute(select(Customer).where(Customer.id == customer_id))
+        customer = result.scalar_one_or_none()
+        if not customer:
+            raise NotFoundError("Customer not found")
+        return customer
+
+    if not customer_name:
+        raise BadRequestError("Either customer_id or customer_name is required")
+
+    # Find by exact name (case-insensitive)
+    result = await db.execute(
+        select(Customer).where(func.lower(Customer.name) == customer_name.strip().lower())
+    )
+    customer = result.scalar_one_or_none()
+
+    if not customer:
+        contact: dict = {}
+        if customer_phone:
+            contact["phone"] = customer_phone
+        if customer_address:
+            contact["address"] = customer_address
+        customer = Customer(
+            name=customer_name.strip(),
+            type=CustomerType.RETAIL,
+            contact=contact if contact else None,
+        )
+        db.add(customer)
+        await db.flush()
+    else:
+        # Update contact info if provided
+        if customer_phone or customer_address:
+            existing = dict(customer.contact or {})
+            if customer_phone:
+                existing["phone"] = customer_phone
+            if customer_address:
+                existing["address"] = customer_address
+            customer.contact = existing
+
+    return customer
+
+
 async def create_sale(
     db: AsyncSession,
-    customer_id: str,
+    customer_id: Optional[str],
     sale_type: SaleType,
     line_items_data: list,
     created_by_user_id: str,
     tax: Decimal = Decimal("0.00"),
+    discount: Decimal = Decimal("0.00"),
+    delivery_fee: Decimal = Decimal("0.00"),
+    amount_paid: Decimal = Decimal("0.00"),
+    salesperson_name: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    sales_channel: Optional[str] = None,
     sale_date: Optional[date] = None,
     notes: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    customer_address: Optional[str] = None,
 ) -> Sale:
-    # Validate customer
-    customer_result = await db.execute(select(Customer).where(Customer.id == customer_id))
-    customer = customer_result.scalar_one_or_none()
-    if not customer:
-        raise NotFoundError("Customer not found")
+    customer = await _resolve_customer(
+        db, customer_id, customer_name, customer_phone, customer_address
+    )
 
     invoice_number = await generate_invoice_number(db)
     subtotal = Decimal("0.00")
 
     sale = Sale(
         invoice_number=invoice_number,
-        customer_id=customer_id,
+        customer_id=customer.id,
         type=sale_type,
         subtotal=Decimal("0.00"),
         tax=tax,
+        discount=discount,
+        delivery_fee=delivery_fee,
         total=Decimal("0.00"),
         amount_paid=Decimal("0.00"),
         payment_status=PaymentStatus.UNPAID,
         date=sale_date or date.today(),
         created_by_user_id=created_by_user_id,
+        salesperson_name=salesperson_name,
+        payment_method=payment_method,
+        sales_channel=sales_channel,
         notes=notes,
     )
     db.add(sale)
@@ -87,7 +148,6 @@ async def create_sale(
                     f"Device {device.imei} is not in SALES_STOCK (location: {device.location.value})"
                 )
 
-            # Transition to RESERVED
             validate_transition(DeviceStatus.SELLABLE, DeviceStatus.RESERVED, DeviceLocation.SALES_STOCK)
             device.status = DeviceStatus.RESERVED
             device.sale_id = sale.id
@@ -131,7 +191,7 @@ async def create_sale(
         subtotal += line_total
 
     sale.subtotal = subtotal
-    sale.total = subtotal + tax
+    sale.total = subtotal - discount + delivery_fee + tax
 
     # Finalise devices as SOLD
     for item_data in line_items_data:
@@ -157,8 +217,14 @@ async def create_sale(
                     notes=f"Sold on invoice {invoice_number}",
                 )
 
-    # Update customer balance
-    customer.current_balance = (customer.current_balance or Decimal("0.00")) + sale.total
+    # Handle initial payment
+    if amount_paid > Decimal("0"):
+        sale.amount_paid = min(amount_paid, sale.total)
+        sale.payment_status = _compute_payment_status(sale.total, sale.amount_paid)
+
+    # Customer balance = outstanding amount (total minus what's already paid)
+    outstanding = sale.total - (sale.amount_paid or Decimal("0"))
+    customer.current_balance = (customer.current_balance or Decimal("0.00")) + outstanding
 
     return sale
 
@@ -178,7 +244,6 @@ async def add_payment(
     sale.amount_paid = (sale.amount_paid or Decimal("0.00")) + amount
     sale.payment_status = _compute_payment_status(sale.total, sale.amount_paid)
 
-    # Update customer balance
     customer_result = await db.execute(select(Customer).where(Customer.id == sale.customer_id))
     customer = customer_result.scalar_one_or_none()
     if customer:
