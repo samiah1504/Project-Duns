@@ -16,12 +16,12 @@ import {
 
 interface LabelDevice {
   imei: string
+  inventory_number: string
   brand: string
   model_name: string
   storage: string
   colour: string
   grade: string
-  purchase_cost: string
 }
 
 function buildLabelHTML(devices: LabelDevice[]): string {
@@ -31,7 +31,7 @@ function buildLabelHTML(devices: LabelDevice[]): string {
   })
 
   const labels = devices.map((d) => {
-    const barcodeSrc = barcodeDataURL(d.imei)
+    const barcodeSrc = barcodeDataURL(d.inventory_number)
     return `
       <div class="label">
         <div class="company">${co.name}</div>
@@ -43,6 +43,7 @@ function buildLabelHTML(devices: LabelDevice[]): string {
         </div>
         <div class="imei-line">IMEI: ${d.imei}</div>
         <img class="barcode" src="${barcodeSrc}" alt="barcode" />
+        <div class="inv-line">${d.inventory_number}</div>
         <div class="date-line">Printed: ${today}</div>
       </div>`
   }).join('')
@@ -61,7 +62,8 @@ function buildLabelHTML(devices: LabelDevice[]): string {
     .specs { display: flex; gap: 4mm; font-size: 9pt; color: #333; margin-bottom: 2mm; flex-wrap: wrap; }
     .spec-item { background: #f0f0f0; padding: 1mm 2mm; border-radius: 2mm; }
     .imei-line { font-size: 8pt; color: #444; margin-bottom: 2mm; font-family: monospace; }
-    .barcode { width: 100%; height: auto; display: block; margin-bottom: 1mm; }
+    .barcode { width: 100%; height: auto; display: block; margin-bottom: 0; }
+    .inv-line { font-size: 9pt; font-family: monospace; font-weight: 700; text-align: center; letter-spacing: 2px; margin-bottom: 2mm; color: #111; }
     .date-line { font-size: 7pt; color: #999; text-align: right; }
     @media print {
       body { margin: 0; }
@@ -91,12 +93,12 @@ function printDeviceLabels(devices: LabelDevice[]) {
 function deviceToLabel(d: DeviceWithModel): LabelDevice {
   return {
     imei: d.imei,
+    inventory_number: d.inventory_number ?? d.imei,
     brand: d.model?.brand ?? '—',
     model_name: d.model?.model_name ?? '—',
     storage: d.model?.storage ?? '—',
     colour: d.model?.colour ?? '—',
     grade: d.grade,
-    purchase_cost: d.purchase_cost,
   }
 }
 

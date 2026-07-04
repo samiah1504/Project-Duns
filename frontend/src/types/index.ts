@@ -30,6 +30,7 @@ export type DeviceLocation = 'INTAKE' | 'BENCH' | 'SALES_STOCK' | 'EXTERNAL' | '
 export interface Device {
   id: string
   imei: string
+  inventory_number?: string
   model_id: string
   grade: DeviceGrade
   status: DeviceStatus

@@ -57,6 +57,7 @@ class PhoneModelSimple(BaseModel):
 class DeviceForPOOut(BaseModel):
     id: str
     imei: str
+    inventory_number: Optional[str] = None
     grade: str
     status: str
     location: str

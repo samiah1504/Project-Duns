@@ -13,6 +13,7 @@ from app.core.permissions import inventory_or_admin, any_authenticated
 from app.core.exceptions import NotFoundError, ConflictError
 from app.services.device_state_machine import validate_transition
 from app.services.audit import write_audit
+from app.services.intake import generate_inventory_number
 from app.models.audit_log import ReferenceType
 from app.models.user import User
 
@@ -70,7 +71,8 @@ async def create_device(
     existing = await db.execute(select(Device).where(Device.imei == body.imei))
     if existing.scalar_one_or_none():
         raise ConflictError(f"IMEI {body.imei} already exists")
-    device = Device(**body.model_dump())
+    inv_num = await generate_inventory_number(db)
+    device = Device(**body.model_dump(), inventory_number=inv_num)
     db.add(device)
     await db.flush()
     await write_audit(
@@ -84,6 +86,19 @@ async def create_device(
     )
     await db.commit()
     await db.refresh(device)
+    return device
+
+
+@router.get("/by-inventory/{inv_num}", response_model=DeviceOut)
+async def get_device_by_inventory_number(
+    inv_num: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(any_authenticated()),
+):
+    result = await db.execute(select(Device).where(Device.inventory_number == inv_num))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise NotFoundError(f"Device with inventory number {inv_num} not found")
     return device
 
 

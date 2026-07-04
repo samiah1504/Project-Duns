@@ -35,6 +35,9 @@ async def lifespan(app: FastAPI):
             """DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='email') THEN ALTER TABLE users RENAME COLUMN email TO username; END IF; END $$""",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
+            # Inventory number for barcode system
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS inventory_number VARCHAR(20)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_devices_inventory_number ON devices (inventory_number) WHERE inventory_number IS NOT NULL",
         ]:
             await conn.execute(text(stmt))
     yield

@@ -35,6 +35,7 @@ class DeviceTransfer(BaseModel):
 class DeviceOut(BaseModel):
     id: str
     imei: str
+    inventory_number: Optional[str] = None
     model_id: str
     grade: DeviceGrade
     status: DeviceStatus

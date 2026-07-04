@@ -1,3 +1,5 @@
+import secrets
+import string
 from datetime import datetime, date
 from typing import Optional
 
@@ -11,6 +13,19 @@ from app.models.part import Part
 from app.models.audit_log import ReferenceType
 from app.services.audit import write_audit
 from app.core.exceptions import BadRequestError, NotFoundError, ConflictError
+
+
+_INV_CHARSET = string.ascii_uppercase + string.digits
+
+
+async def generate_inventory_number(db: AsyncSession) -> str:
+    """Generate a unique, non-predictable inventory number like TDM-7K4P9X2Q."""
+    while True:
+        suffix = ''.join(secrets.choice(_INV_CHARSET) for _ in range(8))
+        candidate = f"TDM-{suffix}"
+        result = await db.execute(select(Device).where(Device.inventory_number == candidate))
+        if not result.scalar_one_or_none():
+            return candidate
 
 
 async def generate_po_number(db: AsyncSession) -> str:
@@ -126,8 +141,10 @@ async def create_purchase_order(
                 init_status = DeviceStatus.AWAITING_REFURB
                 init_location = DeviceLocation.INTAKE
 
+            inv_num = await generate_inventory_number(db)
             device = Device(
                 imei=item_data.imei,
+                inventory_number=inv_num,
                 model_id=model_id,
                 grade=DeviceGrade(item_data.grade) if item_data.grade else DeviceGrade.C,
                 status=init_status,

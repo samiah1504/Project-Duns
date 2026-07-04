@@ -1,9 +1,9 @@
 /**
- * CODE128-C barcode as inline SVG (no canvas, no external deps).
- * CODE128-C encodes digit pairs — perfect for 15-digit IMEIs.
+ * Code 128 barcode as inline SVG (no canvas, no external deps).
+ * Code 128B is used for alphanumeric strings (like TDM-XXXXXXXX).
+ * Code 128C is used for pure-digit strings (like IMEIs) — more compact.
  */
 
-// Symbol table: index = code value, value = [b1,s1,b2,s2,b3,s3] module widths
 const T: number[][] = [
   [2,1,2,2,2,2],[2,2,2,1,2,2],[2,2,2,2,2,1],[1,2,1,2,2,3],[1,2,1,3,2,2],
   [1,3,1,2,2,2],[1,2,2,2,1,3],[1,2,2,3,1,2],[1,3,2,2,1,2],[2,2,1,2,1,3],
@@ -25,15 +25,32 @@ const T: number[][] = [
   [1,2,4,2,1,1],[4,1,1,2,1,2],[4,2,1,1,1,2],[4,2,1,2,1,1],[2,1,2,1,4,1],
   [2,1,4,1,2,1],[4,1,2,1,2,1],[1,1,1,1,4,3],[1,1,1,3,4,1],[1,3,1,1,4,1],
   [1,1,4,1,1,3],[1,1,4,3,1,1],[4,1,1,1,1,3],[4,1,1,3,1,1],[1,1,3,1,4,1],
-  [1,1,4,1,3,1],[3,1,1,1,4,1],[4,1,1,1,3,1], // 100-102
-  [2,1,1,4,1,2],[2,1,1,2,1,4],[2,1,1,2,3,2], // 103=START_A, 104=START_B, 105=START_C
+  [1,1,4,1,3,1],[3,1,1,1,4,1],[4,1,1,1,3,1],
+  // 103=START_A, 104=START_B, 105=START_C
+  [2,1,1,4,1,2],[2,1,1,2,1,4],[2,1,1,2,3,2],
 ]
-// STOP pattern (13 modules)
-const STOP = [2,3,3,1,1,1,2]
-const START_C = 105
-const CODE_B  = 100  // switch to subset B (for last odd digit)
 
-function buildSymbols(digits: string): number[] {
+const STOP = [2,3,3,1,1,1,2]
+const START_B = 104
+const START_C = 105
+const CODE_B  = 100  // switch to Code B within Code C stream
+
+/** Code 128B: encodes any printable ASCII (0x20–0x7E). */
+function buildSymbolsB(text: string): number[] {
+  const syms: number[] = [START_B]
+  for (const ch of text) {
+    const v = ch.charCodeAt(0) - 32
+    if (v < 0 || v > 95) throw new Error(`Character '${ch}' not encodable in Code 128B`)
+    syms.push(v)
+  }
+  let check = START_B
+  syms.slice(1).forEach((v, i) => { check += v * (i + 1) })
+  syms.push(check % 103)
+  return syms
+}
+
+/** Code 128C: encodes digit strings (most compact for pure numbers). */
+function buildSymbolsC(digits: string): number[] {
   const syms: number[] = [START_C]
   let s = digits.replace(/\D/g, '')
 
@@ -47,17 +64,20 @@ function buildSymbols(digits: string): number[] {
   }
   if (lastDigit !== null) {
     syms.push(CODE_B)
-    syms.push(16 + lastDigit) // Code-B digit offset: 0='16', 9='25'
+    syms.push(16 + lastDigit)
   }
 
-  // Check character
   let check = START_C
   syms.slice(1).forEach((v, i) => { check += v * (i + 1) })
   syms.push(check % 103)
   return syms
 }
 
-/** Returns an inline SVG string for the barcode. Always works — no canvas needed. */
+function buildSymbols(value: string): number[] {
+  return /^\d+$/.test(value) ? buildSymbolsC(value) : buildSymbolsB(value)
+}
+
+/** Returns an inline SVG string for the barcode. */
 export function barcodeSVG(value: string, opts?: { height?: number; scale?: number }): string {
   const height = opts?.height ?? 60
   const scale  = opts?.scale  ?? 2
@@ -65,7 +85,6 @@ export function barcodeSVG(value: string, opts?: { height?: number; scale?: numb
 
   const syms = buildSymbols(value)
 
-  // Collect all module patterns into one flat list: [width, isBar, ...]
   const modules: Array<{ w: number; bar: boolean }> = []
   const addPattern = (pat: number[]) => {
     pat.forEach((w, j) => modules.push({ w: w * scale, bar: j % 2 === 0 }))
