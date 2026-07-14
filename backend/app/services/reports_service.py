@@ -1,4 +1,4 @@
-from datetime import date as date_type, datetime
+from datetime import date as date_type, datetime, timedelta
 from decimal import Decimal
 from typing import Optional, Any
 
@@ -9,11 +9,12 @@ from sqlalchemy.orm import selectinload
 from app.models.device import Device, DeviceStatus
 from app.models.expense import Expense
 from app.models.part import Part
-from app.models.purchase_order import PurchaseOrder, POLineItem, POLineType
+from app.models.purchase_order import PurchaseOrder, POLineItem, POLineType, POStatus
 from app.models.refurb_job import RefurbJob, RefurbJobPart, JobStatus, JobOutcome
-from app.models.sale import Sale, SaleType, PaymentStatus
+from app.models.sale import Sale, SaleLineItem, SaleType, PaymentStatus
 from app.models.return_rma import ReturnRMA, RestockOutcome
 from app.models.user import User
+from app.models.customer import Customer
 from app.schemas.expense import ExpensesSummaryReport, ExpenseSummaryItem
 from app.schemas.reports import (
     ReconciliationReport,
@@ -857,4 +858,345 @@ async def get_my_refurb_dashboard(
             }
             for j in jobs
         ],
+    }
+
+
+async def get_ceo_dashboard(
+    db: AsyncSession,
+    date_from: date_type,
+    date_to: date_type,
+) -> dict:
+    """Comprehensive CEO dashboard — all KPIs in one call."""
+    from collections import defaultdict
+    from datetime import timedelta
+
+    today = date_type.today()
+    start_of_week = today - timedelta(days=today.weekday())
+
+    # ── Sales in period ───────────────────────────────────────────────────────
+    sales_q = (
+        select(Sale)
+        .options(
+            selectinload(Sale.line_items).selectinload(SaleLineItem.device).selectinload(Device.model)
+        )
+        .where(Sale.date >= date_from, Sale.date <= date_to)
+    )
+    sales_period = (await db.execute(sales_q)).scalars().all()
+
+    # Today sales
+    sales_today_q = select(Sale).where(Sale.date == today)
+    sales_today = (await db.execute(sales_today_q)).scalars().all()
+
+    # This-week sales (for phone count)
+    sales_week_q = (
+        select(Sale)
+        .options(selectinload(Sale.line_items))
+        .where(Sale.date >= start_of_week, Sale.date <= today)
+    )
+    sales_week = (await db.execute(sales_week_q)).scalars().all()
+
+    # ── Outstanding customer balances (all time) ───────────────────────────
+    outstanding_res = await db.execute(
+        select(func.sum(Sale.total - Sale.amount_paid)).where(Sale.amount_paid < Sale.total)
+    )
+    outstanding_balances = outstanding_res.scalar() or Decimal("0.00")
+
+    # ── Inventory counts (current state, no date filter) ──────────────────
+    inv_counts: dict[DeviceStatus, int] = {}
+    for status in DeviceStatus:
+        r = await db.execute(select(func.count(Device.id)).where(Device.status == status))
+        inv_counts[status] = r.scalar() or 0
+
+    in_stock_q = select(Device).where(
+        Device.status.in_([DeviceStatus.SELLABLE, DeviceStatus.RESERVED])
+    )
+    in_stock_devices = (await db.execute(in_stock_q)).scalars().all()
+    inventory_value = sum(d.total_cost for d in in_stock_devices)
+
+    # ── Refurb jobs in period ─────────────────────────────────────────────
+    refurb_q = (
+        select(RefurbJob)
+        .options(selectinload(RefurbJob.parts_used), selectinload(RefurbJob.assigned_engineer))
+        .where(RefurbJob.date_opened >= date_from, RefurbJob.date_opened <= date_to)
+    )
+    refurb_jobs = (await db.execute(refurb_q)).scalars().all()
+
+    # ── Purchase orders in period ─────────────────────────────────────────
+    po_q = (
+        select(PurchaseOrder)
+        .options(selectinload(PurchaseOrder.line_items))
+        .where(PurchaseOrder.date >= date_from, PurchaseOrder.date <= date_to)
+    )
+    pos_period = (await db.execute(po_q)).scalars().all()
+
+    pending_po_q = select(PurchaseOrder).where(PurchaseOrder.status == POStatus.OPEN)
+    pending_pos = (await db.execute(pending_po_q)).scalars().all()
+
+    recent_po_q = (
+        select(PurchaseOrder)
+        .options(selectinload(PurchaseOrder.line_items))
+        .order_by(PurchaseOrder.created_at.desc())
+        .limit(5)
+    )
+    recent_pos = (await db.execute(recent_po_q)).scalars().all()
+
+    # ── Expenses in period ────────────────────────────────────────────────
+    exp_q = select(Expense).where(Expense.date >= date_from, Expense.date <= date_to)
+    expenses_period = (await db.execute(exp_q)).scalars().all()
+
+    # ── Returns in period ─────────────────────────────────────────────────
+    ret_q = select(ReturnRMA).where(ReturnRMA.date >= date_from, ReturnRMA.date <= date_to)
+    returns_period = (await db.execute(ret_q)).scalars().all()
+
+    # ── Alerts ────────────────────────────────────────────────────────────
+    low_stock_parts = (
+        await db.execute(select(Part).where(Part.quantity_on_hand <= Part.min_stock_level))
+    ).scalars().all()
+
+    cutoff_14 = datetime.utcnow() - timedelta(days=14)
+    cutoff_30 = datetime.utcnow() - timedelta(days=30)
+
+    long_refurb_count = (await db.execute(
+        select(func.count(Device.id)).where(
+            Device.status.in_([DeviceStatus.IN_REFURB, DeviceStatus.AWAITING_REFURB]),
+            Device.updated_at <= cutoff_14,
+        )
+    )).scalar() or 0
+
+    overdue_external_count = (await db.execute(
+        select(func.count(Device.id)).where(
+            Device.status == DeviceStatus.SENT_EXTERNAL,
+            Device.updated_at <= cutoff_30,
+        )
+    )).scalar() or 0
+
+    overdue_customers = (await db.execute(
+        select(Customer).where(Customer.current_balance > 0).order_by(Customer.current_balance.desc()).limit(10)
+    )).scalars().all()
+
+    pending_returns_count = (await db.execute(
+        select(func.count(ReturnRMA.id)).where(ReturnRMA.resolution == None)  # noqa: E711
+    )).scalar() or 0
+
+    # ── Computed metrics ─────────────────────────────────────────────────
+    # Sales
+    revenue_period = sum(s.total for s in sales_period)
+    payments_received = sum(s.amount_paid for s in sales_period)
+    sales_today_revenue = sum(s.total for s in sales_today)
+
+    phones_sold_today = sum(1 for s in sales_today for li in (getattr(s, 'line_items', []) or []) if li.device_id)
+    phones_sold_week = sum(1 for s in sales_week for li in s.line_items if li.device_id)
+    phones_sold_period = sum(1 for s in sales_period for li in s.line_items if li.device_id)
+    wholesale_value = sum(s.total for s in sales_period if s.type == SaleType.WHOLESALE)
+    retail_value = sum(s.total for s in sales_period if s.type == SaleType.RETAIL)
+
+    by_payment_status: dict[str, int] = defaultdict(int)
+    for s in sales_period:
+        by_payment_status[s.payment_status.value] += 1
+
+    # Top models
+    model_counts: dict[str, dict] = defaultdict(lambda: {"count": 0, "revenue": Decimal("0")})
+    for s in sales_period:
+        for li in s.line_items:
+            if li.device and li.device.model:
+                m = li.device.model
+                key = f"{m.brand} {m.model_name}" + (f" {m.storage}" if m.storage else "")
+                model_counts[key]["count"] += 1
+                model_counts[key]["revenue"] += li.unit_price
+    top_models = sorted(model_counts.items(), key=lambda x: x[1]["count"], reverse=True)[:5]
+
+    # Top salespersons
+    sp_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "revenue": Decimal("0")})
+    for s in sales_period:
+        sp = s.salesperson_name or "Unassigned"
+        sp_data[sp]["count"] += 1
+        sp_data[sp]["revenue"] += s.total
+    top_salespersons = sorted(sp_data.items(), key=lambda x: x[1]["revenue"], reverse=True)[:5]
+
+    # COGS: cost of devices sold in period (via their sale_line_items)
+    devices_sold = [li.device for s in sales_period for li in s.line_items if li.device]
+    cogs = sum(d.total_cost for d in devices_sold)
+
+    # Refurb costs in period
+    refurb_parts_cost = sum(
+        p.unit_cost_at_time * p.quantity for j in refurb_jobs for p in j.parts_used
+    )
+    refurb_external_cost = sum(j.external_cost or Decimal("0") for j in refurb_jobs)
+
+    # Expenses
+    expenses_total = sum(e.amount for e in expenses_period)
+    exp_by_title: dict[str, Decimal] = defaultdict(Decimal)
+    for e in expenses_period:
+        exp_by_title[e.title] += e.amount
+
+    # Returns / refunds
+    refunds_period = sum(r.refund_amount or Decimal("0") for r in returns_period)
+
+    # Profit
+    gross_profit = revenue_period - cogs
+    net_profit = gross_profit - expenses_total - refunds_period
+
+    # Refurb
+    closed_jobs = [j for j in refurb_jobs if j.status == JobStatus.CLOSED]
+    successful_jobs = [j for j in closed_jobs if j.outcome == JobOutcome.REGRADED]
+    scrapped_jobs = [j for j in closed_jobs if j.outcome == JobOutcome.SCRAPPED]
+    external_jobs = [j for j in closed_jobs if j.outcome == JobOutcome.SENT_EXTERNAL]
+
+    durations = [
+        (j.date_closed - j.date_opened).days
+        for j in closed_jobs
+        if j.date_closed and j.date_opened
+    ]
+    avg_days = round(sum(durations) / len(durations), 1) if durations else None
+    success_rate = round(len(successful_jobs) / len(closed_jobs) * 100, 1) if closed_jobs else None
+
+    eng_data: dict[str, dict] = defaultdict(lambda: {"closed": 0, "success": 0})
+    for j in closed_jobs:
+        eng = j.assigned_engineer.name if j.assigned_engineer else "Unassigned"
+        eng_data[eng]["closed"] += 1
+        if j.outcome == JobOutcome.REGRADED:
+            eng_data[eng]["success"] += 1
+
+    # Purchases
+    phones_received_period = sum(
+        li.quantity
+        for po in pos_period
+        if po.status == POStatus.RECEIVED
+        for li in po.line_items
+        if li.line_type == POLineType.DEVICE
+    )
+    stock_purchase_value = sum(
+        (po.shipping_cost or Decimal("0")) + sum((li.unit_cost or Decimal("0")) * li.quantity for li in po.line_items)
+        for po in pos_period
+    )
+
+    # Returns breakdown
+    by_reason: dict[str, int] = defaultdict(int)
+    for r in returns_period:
+        by_reason[r.reason_code.value] += 1
+    restocked = sum(1 for r in returns_period if r.restock_outcome == RestockOutcome.SELLABLE)
+    returned_to_refurb = sum(
+        1 for r in returns_period
+        if r.restock_outcome in (RestockOutcome.REFURB, RestockOutcome.AWAITING_REFURB)
+    )
+    scrapped_after_return = sum(1 for r in returns_period if r.restock_outcome == RestockOutcome.SCRAPPED)
+
+    # Charts: daily sales trend
+    daily_sales: dict = defaultdict(lambda: {"revenue": Decimal("0"), "count": 0})
+    for s in sales_period:
+        d = s.date.isoformat()
+        daily_sales[d]["revenue"] += s.total
+        daily_sales[d]["count"] += 1
+    sales_trend = [
+        {"date": k, "revenue": str(v["revenue"]), "count": v["count"]}
+        for k, v in sorted(daily_sales.items())
+    ]
+
+    return {
+        "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+        "summary": {
+            "sales_today": str(sales_today_revenue),
+            "sales_period": str(revenue_period),
+            "payments_received_period": str(payments_received),
+            "outstanding_balances": str(outstanding_balances),
+            "gross_profit_period": str(gross_profit),
+            "net_profit_period": str(net_profit),
+            "expenses_period": str(expenses_total),
+            "cogs_period": str(cogs),
+            "refunds_period": str(refunds_period),
+            "inventory_value": str(inventory_value),
+            "phones_in_stock": len(in_stock_devices),
+        },
+        "inventory": {
+            "sellable": inv_counts.get(DeviceStatus.SELLABLE, 0),
+            "awaiting_refurb": inv_counts.get(DeviceStatus.AWAITING_REFURB, 0),
+            "in_refurb": inv_counts.get(DeviceStatus.IN_REFURB, 0),
+            "sent_external": inv_counts.get(DeviceStatus.SENT_EXTERNAL, 0),
+            "reserved": inv_counts.get(DeviceStatus.RESERVED, 0),
+            "scrapped": inv_counts.get(DeviceStatus.SCRAPPED, 0),
+            "returned": inv_counts.get(DeviceStatus.RETURNED, 0),
+            "sold": inv_counts.get(DeviceStatus.SOLD, 0),
+        },
+        "sales": {
+            "phones_sold_today": phones_sold_today,
+            "phones_sold_week": phones_sold_week,
+            "phones_sold_period": phones_sold_period,
+            "wholesale_value": str(wholesale_value),
+            "retail_value": str(retail_value),
+            "by_payment_status": dict(by_payment_status),
+            "top_models": [
+                {"model": k, "count": v["count"], "revenue": str(v["revenue"])}
+                for k, v in top_models
+            ],
+            "top_salespersons": [
+                {"name": k, "count": v["count"], "revenue": str(v["revenue"])}
+                for k, v in top_salespersons
+            ],
+        },
+        "refurb": {
+            "awaiting": inv_counts.get(DeviceStatus.AWAITING_REFURB, 0),
+            "in_progress": inv_counts.get(DeviceStatus.IN_REFURB, 0),
+            "closed_period": len(closed_jobs),
+            "successful_period": len(successful_jobs),
+            "sent_external_period": len(external_jobs),
+            "scrapped_period": len(scrapped_jobs),
+            "avg_days": avg_days,
+            "success_rate": success_rate,
+            "engineers": [
+                {"name": k, "closed": v["closed"], "success": v["success"]}
+                for k, v in sorted(eng_data.items(), key=lambda x: x[1]["closed"], reverse=True)
+            ],
+        },
+        "purchases": {
+            "pending_pos": len(pending_pos),
+            "phones_received_period": phones_received_period,
+            "stock_purchase_value_period": str(stock_purchase_value),
+            "recent_pos": [
+                {
+                    "po_number": po.po_number,
+                    "date": po.date.isoformat(),
+                    "status": po.status.value,
+                    "items": len(po.line_items),
+                }
+                for po in recent_pos
+            ],
+        },
+        "returns": {
+            "total_period": len(returns_period),
+            "refunds_period": str(refunds_period),
+            "restocked": restocked,
+            "returned_to_refurb": returned_to_refurb,
+            "scrapped_after_return": scrapped_after_return,
+            "by_reason": [
+                {"reason": k, "count": v}
+                for k, v in sorted(by_reason.items(), key=lambda x: x[1], reverse=True)
+            ],
+        },
+        "alerts": {
+            "low_stock_parts": [
+                {"id": p.id, "name": p.name, "on_hand": p.quantity_on_hand, "minimum": p.min_stock_level}
+                for p in low_stock_parts
+            ],
+            "long_in_refurb": long_refurb_count,
+            "overdue_external": overdue_external_count,
+            "overdue_customer_balances": [
+                {"id": c.id, "name": c.name, "balance": str(c.current_balance)}
+                for c in overdue_customers
+            ],
+            "pending_returns_inspection": pending_returns_count,
+            "pending_pos": len(pending_pos),
+        },
+        "charts": {
+            "sales_trend": sales_trend,
+            "expense_breakdown": [
+                {"category": k, "amount": str(v)}
+                for k, v in sorted(exp_by_title.items(), key=lambda x: x[1], reverse=True)[:8]
+            ],
+            "refurb_outcomes": {
+                "successful": len(successful_jobs),
+                "scrapped": len(scrapped_jobs),
+                "sent_external": len(external_jobs),
+                "in_progress": inv_counts.get(DeviceStatus.IN_REFURB, 0) + inv_counts.get(DeviceStatus.AWAITING_REFURB, 0),
+            },
+        },
     }

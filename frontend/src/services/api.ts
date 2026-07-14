@@ -131,3 +131,4 @@ export const getReturnsDetailReport = (params?: Record<string, string>) => api.g
 export const getOperationsSummary = (params?: Record<string, string>) => api.get('/reports/operations-summary', { params })
 export const getMySales = (params?: Record<string, string>) => api.get('/reports/my-sales', { params })
 export const getMyRefurb = (params?: Record<string, string>) => api.get('/reports/my-refurb', { params })
+export const getCeoDashboard = (params?: Record<string, string>) => api.get('/reports/ceo-dashboard', { params })

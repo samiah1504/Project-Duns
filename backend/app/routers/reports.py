@@ -30,6 +30,7 @@ from app.services.reports_service import (
     get_operations_summary,
     get_my_sales_dashboard,
     get_my_refurb_dashboard,
+    get_ceo_dashboard,
 )
 from app.models.user import User
 
@@ -200,3 +201,17 @@ async def my_refurb(
     current_user: User = Depends(any_authenticated()),
 ):
     return await get_my_refurb_dashboard(db, user_id=current_user.id, date_from=date_from, date_to=date_to)
+
+
+@router.get("/ceo-dashboard")
+async def ceo_dashboard(
+    date_from: Optional[date_type] = Query(None),
+    date_to: Optional[date_type] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("ADMIN")),
+):
+    from datetime import date
+    today = date.today()
+    df = date_from or date(today.year, today.month, 1)
+    dt = date_to or today
+    return await get_ceo_dashboard(db, date_from=df, date_to=dt)
