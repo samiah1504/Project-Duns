@@ -884,7 +884,11 @@ async def get_ceo_dashboard(
     sales_period = (await db.execute(sales_q)).scalars().all()
 
     # Today sales
-    sales_today_q = select(Sale).where(Sale.date == today)
+    sales_today_q = (
+        select(Sale)
+        .options(selectinload(Sale.line_items))
+        .where(Sale.date == today)
+    )
     sales_today = (await db.execute(sales_today_q)).scalars().all()
 
     # This-week sales (for phone count)
@@ -978,6 +982,14 @@ async def get_ceo_dashboard(
         select(func.count(ReturnRMA.id)).where(ReturnRMA.resolution == None)  # noqa: E711
     )).scalar() or 0
 
+    reserved_count = inv_counts.get(DeviceStatus.RESERVED, 0)
+
+    # Reconciliation check: total received = all statuses combined
+    # We compute this as total devices in the system
+    total_devices = sum(inv_counts.values())
+    # Simple mismatch: reserved phones still awaiting completion
+    recon_mismatch = inv_counts.get(DeviceStatus.AWAITING_REFURB, 0) != 0 or inv_counts.get(DeviceStatus.RETURNED, 0) != 0
+
     # ── Computed metrics ─────────────────────────────────────────────────
     # Sales
     revenue_period = sum(s.total for s in sales_period)
@@ -1065,6 +1077,20 @@ async def get_ceo_dashboard(
         for li in po.line_items
         if li.line_type == POLineType.DEVICE
     )
+    parts_purchased_period = sum(
+        li.quantity
+        for po in pos_period
+        if po.status == POStatus.RECEIVED
+        for li in po.line_items
+        if li.line_type == POLineType.PART
+    )
+    parts_purchase_value_period = sum(
+        (li.unit_cost or Decimal("0")) * li.quantity
+        for po in pos_period
+        if po.status == POStatus.RECEIVED
+        for li in po.line_items
+        if li.line_type == POLineType.PART
+    )
     stock_purchase_value = sum(
         (po.shipping_cost or Decimal("0")) + sum((li.unit_cost or Decimal("0")) * li.quantity for li in po.line_items)
         for po in pos_period
@@ -1090,6 +1116,56 @@ async def get_ceo_dashboard(
     sales_trend = [
         {"date": k, "revenue": str(v["revenue"]), "count": v["count"]}
         for k, v in sorted(daily_sales.items())
+    ]
+
+    # Chart: daily phones received vs sold
+    daily_received: dict[str, int] = defaultdict(int)
+    for po in pos_period:
+        if po.status == POStatus.RECEIVED:
+            for li in po.line_items:
+                if li.line_type == POLineType.DEVICE:
+                    daily_received[po.date.isoformat()] += li.quantity
+    daily_sold: dict[str, int] = defaultdict(int)
+    for s in sales_period:
+        for li in s.line_items:
+            if li.device_id:
+                daily_sold[s.date.isoformat()] += 1
+    all_dates = sorted(set(list(daily_received.keys()) + list(daily_sold.keys())))
+    received_vs_sold = [
+        {"date": d, "received": daily_received.get(d, 0), "sold": daily_sold.get(d, 0)}
+        for d in all_dates
+    ]
+
+    # Chart: returns trend
+    daily_returns: dict[str, int] = defaultdict(int)
+    for r in returns_period:
+        daily_returns[r.date.isoformat()] += 1
+    returns_trend = [
+        {"date": k, "count": v}
+        for k, v in sorted(daily_returns.items())
+    ]
+
+    # Chart: net profit trend (by day)
+    daily_revenue: dict[str, Decimal] = defaultdict(Decimal)
+    daily_cogs: dict[str, Decimal] = defaultdict(Decimal)
+    for s in sales_period:
+        d = s.date.isoformat()
+        daily_revenue[d] += s.total
+        for li in s.line_items:
+            if li.device:
+                daily_cogs[d] += li.device.total_cost
+    daily_expenses: dict[str, Decimal] = defaultdict(Decimal)
+    for e in expenses_period:
+        daily_expenses[e.date.isoformat()] += e.amount
+    profit_dates = sorted(set(list(daily_revenue.keys()) + list(daily_expenses.keys())))
+    profit_trend = [
+        {
+            "date": d,
+            "revenue": str(daily_revenue.get(d, Decimal("0"))),
+            "gross_profit": str(daily_revenue.get(d, Decimal("0")) - daily_cogs.get(d, Decimal("0"))),
+            "net_profit": str(daily_revenue.get(d, Decimal("0")) - daily_cogs.get(d, Decimal("0")) - daily_expenses.get(d, Decimal("0"))),
+        }
+        for d in profit_dates
     ]
 
     return {
@@ -1150,6 +1226,8 @@ async def get_ceo_dashboard(
         "purchases": {
             "pending_pos": len(pending_pos),
             "phones_received_period": phones_received_period,
+            "parts_purchased_period": parts_purchased_period,
+            "parts_purchase_value_period": str(parts_purchase_value_period),
             "stock_purchase_value_period": str(stock_purchase_value),
             "recent_pos": [
                 {
@@ -1185,6 +1263,8 @@ async def get_ceo_dashboard(
             ],
             "pending_returns_inspection": pending_returns_count,
             "pending_pos": len(pending_pos),
+            "reserved_phones": reserved_count,
+            "recon_mismatch": recon_mismatch,
         },
         "charts": {
             "sales_trend": sales_trend,
@@ -1198,5 +1278,8 @@ async def get_ceo_dashboard(
                 "sent_external": len(external_jobs),
                 "in_progress": inv_counts.get(DeviceStatus.IN_REFURB, 0) + inv_counts.get(DeviceStatus.AWAITING_REFURB, 0),
             },
+            "received_vs_sold": received_vs_sold,
+            "returns_trend": returns_trend,
+            "profit_trend": profit_trend,
         },
     }
