@@ -104,10 +104,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
+_origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    allow_origins=_origins,
+    # credentials=True is incompatible with wildcard origins (Starlette raises 500).
+    # The app uses Bearer tokens in Authorization header, not cookies, so this is only
+    # needed in production where explicit origins are listed.
+    allow_credentials="*" not in _origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
