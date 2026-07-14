@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Linux VPS (Ubuntu 22.04 LTS recommended)
+- Linux VPS (Ubuntu 22.04 or 24.04 LTS recommended)
 - Docker Engine ≥ 24 and Docker Compose plugin
 - At least 1 GB RAM, 10 GB disk
 - A domain name or static IP
@@ -71,7 +71,9 @@ Run the seed script once to create the initial admin account:
 docker compose -f docker-compose.prod.yml exec api python seed.py
 ```
 
-This creates a default admin user. **Change the admin password immediately after first login.**
+This creates: username `admin`, password `tardmart2024`.
+
+> **⚠️ Change the admin password immediately after first login. The default password must never remain in production.**
 
 ---
 
