@@ -92,7 +92,9 @@ class Device(Base):
     sale_line_items: Mapped[list["SaleLineItem"]] = relationship(
         "SaleLineItem", back_populates="device"
     )
-    returns: Mapped[list["ReturnRMA"]] = relationship("ReturnRMA", back_populates="device")
+    returns: Mapped[list["ReturnRMA"]] = relationship(
+        "ReturnRMA", back_populates="device", foreign_keys="ReturnRMA.device_id"
+    )
     audit_logs: Mapped[list["AuditLog"]] = relationship("AuditLog", back_populates="device")
 
     @property
