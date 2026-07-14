@@ -51,6 +51,9 @@ class User(Base):
     returns_handled: Mapped[list["ReturnRMA"]] = relationship(
         "ReturnRMA", back_populates="handled_by_user", foreign_keys="ReturnRMA.handled_by_user_id"
     )
+    return_batches_received: Mapped[list["ReturnBatch"]] = relationship(
+        "ReturnBatch", back_populates="received_by_user", foreign_keys="ReturnBatch.received_by_user_id"
+    )
     expenses_entered: Mapped[list["Expense"]] = relationship(
         "Expense", back_populates="entered_by", foreign_keys="Expense.entered_by_user_id"
     )

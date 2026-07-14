@@ -77,7 +77,12 @@ class Sale(Base):
     devices: Mapped[list["Device"]] = relationship(
         "Device", back_populates="sale", foreign_keys="Device.sale_id"
     )
-    returns: Mapped[list["ReturnRMA"]] = relationship("ReturnRMA", back_populates="original_sale")
+    returns: Mapped[list["ReturnRMA"]] = relationship(
+        "ReturnRMA", back_populates="original_sale", foreign_keys="ReturnRMA.original_sale_id"
+    )
+    return_batches: Mapped[list["ReturnBatch"]] = relationship(
+        "ReturnBatch", back_populates="original_sale", foreign_keys="ReturnBatch.original_sale_id"
+    )
     payments: Mapped[list["SalePayment"]] = relationship(
         "SalePayment", back_populates="sale", cascade="all, delete-orphan", order_by="SalePayment.created_at"
     )

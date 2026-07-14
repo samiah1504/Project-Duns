@@ -93,10 +93,18 @@ export const updateUser = (id: string, data: unknown) => api.patch(`/users/${id}
 export const updateUserPermissions = (id: string, data: unknown) => api.put(`/users/${id}/permissions`, data)
 export const resetUserPassword = (id: string, data: unknown) => api.post(`/users/${id}/reset-password`, data)
 
-// Returns
+// Returns (legacy single-device)
 export const getReturns = () => api.get('/returns')
 export const createReturn = (data: unknown) => api.post('/returns', data)
 export const resolveReturn = (id: string, data: unknown) => api.post(`/returns/${id}/resolve`, data)
+
+// Return Batches (bulk)
+export const getReturnBatches = () => api.get('/returns/batches')
+export const getReturnBatch = (id: string) => api.get(`/returns/batches/${id}`)
+export const createReturnBatch = (data: unknown) => api.post('/returns/batches', data)
+export const updateReturnBatchStatus = (id: string, data: unknown) => api.patch(`/returns/batches/${id}/status`, data)
+export const resolveReturnItem = (batchId: string, itemId: string, data: unknown) =>
+  api.post(`/returns/batches/${batchId}/items/${itemId}/resolve`, data)
 
 // Expenses
 export const getExpenses = (params?: Record<string, string>) => api.get('/expenses', { params })

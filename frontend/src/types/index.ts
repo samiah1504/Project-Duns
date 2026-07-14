@@ -189,6 +189,7 @@ export interface SaleLineItem {
 export interface ReturnRMA {
   id: string
   rma_number: string
+  batch_id?: string
   original_sale_id?: string
   device_id: string
   customer_id: string
@@ -199,9 +200,28 @@ export interface ReturnRMA {
   resolution?: string
   refund_amount?: string
   restock_outcome?: string
+  replacement_device_id?: string
   handled_by_user_id?: string
   notes?: string
   created_at: string
+  device?: { id: string; imei: string; inventory_number?: string; grade: string; status: string }
+}
+
+export type ReturnBatchStatus =
+  | 'draft' | 'received' | 'under_inspection'
+  | 'partially_resolved' | 'completed' | 'cancelled'
+
+export interface ReturnBatch {
+  id: string
+  batch_number: string
+  original_sale_id?: string
+  customer_id: string
+  date: string
+  received_by_user_id?: string
+  notes?: string
+  status: ReturnBatchStatus
+  created_at: string
+  items: ReturnRMA[]
 }
 
 export interface RefurbJob {

@@ -38,6 +38,7 @@ logger = logging.getLogger("tardmart")
 from app.database import engine, Base
 import app.models.sale_payment  # noqa: F401 — registers SalePayment with Base.metadata
 import app.models.expense       # noqa: F401 — registers Expense with Base.metadata
+import app.models.return_rma    # noqa: F401 — registers ReturnBatch with Base.metadata
 
 
 @asynccontextmanager
@@ -64,6 +65,23 @@ async def lifespan(app: FastAPI):
             # Inventory number for barcode system
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS inventory_number VARCHAR(20)",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_devices_inventory_number ON devices (inventory_number) WHERE inventory_number IS NOT NULL",
+            # Bulk returns / batch RMA
+            """CREATE TABLE IF NOT EXISTS return_batches (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                batch_number VARCHAR(50) UNIQUE NOT NULL,
+                original_sale_id UUID REFERENCES sales(id),
+                customer_id UUID NOT NULL REFERENCES customers(id),
+                date DATE NOT NULL,
+                received_by_user_id UUID REFERENCES users(id),
+                notes TEXT,
+                status VARCHAR(30) NOT NULL DEFAULT 'received',
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )""",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES return_batches(id)",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS replacement_device_id UUID REFERENCES devices(id)",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; END $$",
         ]:
             await conn.execute(text(stmt))
     yield

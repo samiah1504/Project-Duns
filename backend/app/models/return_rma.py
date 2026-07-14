@@ -24,21 +24,73 @@ class ReturnResolution(str, enum.Enum):
     REPLACE = "replace"
     REPAIR_AND_RETURN = "repair_and_return"
     RESTOCK = "restock"
+    REJECT = "reject"
+    SCRAP = "scrap"
 
 
 class RestockOutcome(str, enum.Enum):
     SELLABLE = "sellable"
     REFURB = "refurb"
     SCRAPPED = "scrapped"
+    AWAITING_REFURB = "awaiting_refurb"
+
+
+class ReturnBatchStatus(str, enum.Enum):
+    DRAFT = "draft"
+    RECEIVED = "received"
+    UNDER_INSPECTION = "under_inspection"
+    PARTIALLY_RESOLVED = "partially_resolved"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class ReturnBatch(Base):
+    """Header record for a bulk return — one batch can contain many devices."""
+    __tablename__ = "return_batches"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    batch_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    original_sale_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("sales.id"), nullable=True
+    )
+    customer_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("customers.id"), nullable=False
+    )
+    date: Mapped[date] = mapped_column(Date, default=date.today, nullable=False)
+    received_by_user_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[ReturnBatchStatus] = mapped_column(
+        SAEnum(ReturnBatchStatus), nullable=False, default=ReturnBatchStatus.RECEIVED
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    items: Mapped[list["ReturnRMA"]] = relationship(
+        "ReturnRMA", back_populates="batch", cascade="all, delete-orphan"
+    )
+    original_sale: Mapped["Sale | None"] = relationship(
+        "Sale", foreign_keys=[original_sale_id], back_populates="return_batches"
+    )
+    customer: Mapped["Customer"] = relationship("Customer", back_populates="return_batches")
+    received_by_user: Mapped["User | None"] = relationship(
+        "User", back_populates="return_batches_received", foreign_keys=[received_by_user_id]
+    )
 
 
 class ReturnRMA(Base):
+    """One returned device — always belongs to a batch (single-device returns get their own batch)."""
     __tablename__ = "return_rmas"
 
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     rma_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    batch_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("return_batches.id"), nullable=True
+    )
     original_sale_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("sales.id"), nullable=True
     )
@@ -61,14 +113,25 @@ class ReturnRMA(Base):
     restock_outcome: Mapped[RestockOutcome | None] = mapped_column(
         SAEnum(RestockOutcome), nullable=True
     )
+    replacement_device_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("devices.id"), nullable=True
+    )
     handled_by_user_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    original_sale: Mapped["Sale | None"] = relationship("Sale", back_populates="returns")
-    device: Mapped["Device"] = relationship("Device", back_populates="returns")
+    batch: Mapped["ReturnBatch | None"] = relationship("ReturnBatch", back_populates="items")
+    original_sale: Mapped["Sale | None"] = relationship(
+        "Sale", back_populates="returns", foreign_keys=[original_sale_id]
+    )
+    device: Mapped["Device"] = relationship(
+        "Device", back_populates="returns", foreign_keys=[device_id]
+    )
+    replacement_device: Mapped["Device | None"] = relationship(
+        "Device", foreign_keys=[replacement_device_id]
+    )
     customer: Mapped["Customer"] = relationship("Customer", back_populates="returns")
     handled_by_user: Mapped["User | None"] = relationship(
         "User", back_populates="returns_handled", foreign_keys=[handled_by_user_id]

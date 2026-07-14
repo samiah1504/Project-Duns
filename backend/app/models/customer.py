@@ -32,3 +32,4 @@ class Customer(Base):
 
     sales: Mapped[list["Sale"]] = relationship("Sale", back_populates="customer")
     returns: Mapped[list["ReturnRMA"]] = relationship("ReturnRMA", back_populates="customer")
+    return_batches: Mapped[list["ReturnBatch"]] = relationship("ReturnBatch", back_populates="customer")
