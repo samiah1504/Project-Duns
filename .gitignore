@@ -29,3 +29,7 @@ Thumbs.db
 
 # Docker / local
 *.log
+.env.production
+
+# Backups
+backups/
