@@ -132,15 +132,18 @@ export function PageHeader({ title, action }: { title: string; action?: ReactNod
   )
 }
 
-export function Card({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
+export function Card({ children, style, onClick }: { children: ReactNode; style?: React.CSSProperties; onClick?: () => void }) {
   return (
-    <div style={{
-      background: '#fff',
-      border: '1px solid #e2e8f0',
-      borderRadius: 10,
-      padding: 20,
-      ...style,
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 10,
+        padding: 20,
+        ...style,
+      }}
+    >
       {children}
     </div>
   )
@@ -201,13 +204,14 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
   )
 }
 
-export function TR({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+export function TR({ children, onClick, style }: { children: ReactNode; onClick?: () => void; style?: React.CSSProperties }) {
   return (
     <tr
       onClick={onClick}
       style={{
         borderBottom: '1px solid #f1f5f9',
         cursor: onClick ? 'pointer' : undefined,
+        ...style,
       }}
       onMouseEnter={onClick ? (e) => { (e.currentTarget as HTMLElement).style.background = '#f8fafc' } : undefined}
       onMouseLeave={onClick ? (e) => { (e.currentTarget as HTMLElement).style.background = '' } : undefined}
@@ -217,8 +221,8 @@ export function TR({ children, onClick }: { children: ReactNode; onClick?: () =>
   )
 }
 
-export function TD({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
-  return <td style={{ padding: '10px 12px', ...style }}>{children}</td>
+export function TD({ children, style, onClick }: { children: ReactNode; style?: React.CSSProperties; onClick?: (e: React.MouseEvent) => void }) {
+  return <td style={{ padding: '10px 12px', ...style }} onClick={onClick}>{children}</td>
 }
 
 export function Input({ label, ...props }: { label?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
