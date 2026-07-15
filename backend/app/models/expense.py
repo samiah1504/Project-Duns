@@ -27,4 +27,4 @@ class Expense(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    entered_by: Mapped["User"] = relationship("User", foreign_keys=[entered_by_user_id])
+    entered_by: Mapped["User"] = relationship("User", back_populates="expenses_entered", foreign_keys=[entered_by_user_id])

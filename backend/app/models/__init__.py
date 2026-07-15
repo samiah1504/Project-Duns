@@ -7,6 +7,7 @@ from app.models.purchase_order import PurchaseOrder, POLineItem
 from app.models.device import Device
 from app.models.refurb_job import RefurbJob, RefurbJobPart
 from app.models.sale import Sale, SaleLineItem
+from app.models.sale_payment import SalePayment
 from app.models.return_rma import ReturnRMA, ReturnBatch
 from app.models.audit_log import AuditLog
 from app.models.expense import Expense
