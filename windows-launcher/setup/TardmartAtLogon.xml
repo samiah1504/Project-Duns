@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Task Scheduler task definition for Tardmart Launcher.
+  Import via: schtasks /Create /XML "TardmartAtLogon.xml" /TN "TardmartLauncher"
+  Or use the Install-Launcher.ps1 script which fills in the correct paths automatically.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Starts Tardmart POS launcher immediately at Windows logon.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <!-- UserId is filled in by Install-Launcher.ps1 -->
+      <UserId>PLACEHOLDER_USER</UserId>
+      <!-- Zero delay — fires as soon as the desktop is ready -->
+      <Delay>PT0S</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>PLACEHOLDER_USER</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <!-- No execution time limit -->
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <!-- Priority 4 = above-normal, ensures it runs before lower-priority startup items -->
+    <Priority>4</Priority>
+    <RestartOnFailure>
+      <Interval>PT30S</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <!-- Path filled in by Install-Launcher.ps1 -->
+      <Command>PLACEHOLDER_EXE</Command>
+      <WorkingDirectory>PLACEHOLDER_DIR</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
