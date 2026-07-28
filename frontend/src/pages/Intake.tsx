@@ -19,6 +19,7 @@ interface LabelDevice {
   inventory_number: string
   brand: string
   model_name: string
+  ram: string
   storage: string
   colour: string
   grade: string
@@ -37,7 +38,8 @@ function buildLabelHTML(devices: LabelDevice[]): string {
         <div class="company">${co.name}</div>
         <div class="model-line">${d.brand} ${d.model_name}</div>
         <div class="specs">
-          <span class="spec-item">💾 ${d.storage || '—'}</span>
+          <span class="spec-item">RAM: ${d.ram || '—'}</span>
+          <span class="spec-item">ROM: ${d.storage || '—'}</span>
           <span class="spec-item">🎨 ${d.colour || '—'}</span>
           <span class="spec-item">Grade: <strong>${d.grade}</strong></span>
         </div>
@@ -96,6 +98,7 @@ function deviceToLabel(d: DeviceWithModel): LabelDevice {
     inventory_number: d.inventory_number ?? d.imei,
     brand: d.model?.brand ?? '—',
     model_name: d.model?.model_name ?? '—',
+    ram: d.model?.ram ?? '—',
     storage: d.model?.storage ?? '—',
     colour: d.model?.colour ?? '—',
     grade: d.grade,
@@ -126,7 +129,7 @@ function PODevicesPanel({ poId, poNumber }: { poId: string; poNumber: string }) 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-            {['IMEI', 'Model', 'Storage', 'Colour', 'Grade', 'Cost', 'Status', ''].map(h => (
+            {['IMEI', 'Model', 'RAM', 'ROM', 'Colour', 'Grade', 'Cost', 'Status', ''].map(h => (
               <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: '#64748b', fontSize: 11, fontWeight: 600 }}>{h}</th>
             ))}
           </tr>
@@ -136,6 +139,7 @@ function PODevicesPanel({ poId, poNumber }: { poId: string; poNumber: string }) 
             <tr key={d.id} style={{ borderBottom: '1px solid #f8fafc' }}>
               <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontSize: 12 }}>{d.imei}</td>
               <td style={{ padding: '6px 8px' }}>{d.model?.brand} {d.model?.model_name}</td>
+              <td style={{ padding: '6px 8px' }}>{d.model?.ram ?? '—'}</td>
               <td style={{ padding: '6px 8px' }}>{d.model?.storage ?? '—'}</td>
               <td style={{ padding: '6px 8px' }}>{d.model?.colour ?? '—'}</td>
               <td style={{ padding: '6px 8px' }}><strong>{d.grade}</strong></td>
@@ -161,7 +165,8 @@ function PODevicesPanel({ poId, poNumber }: { poId: string; poNumber: string }) 
 
 // ─── New PO Modal ─────────────────────────────────────────────────────────────
 
-const STORAGE_OPTIONS = ['16GB', '32GB', '64GB', '128GB', '256GB', '512GB', '1TB']
+const RAM_OPTIONS = ['4GB', '6GB', '8GB', '12GB', '16GB', '18GB', '24GB', 'Other']
+const ROM_OPTIONS = ['16GB', '32GB', '64GB', '128GB', '256GB', '512GB', '1TB', '2TB', 'Other']
 const GRADES = ['A', 'B', 'C']
 
 const CONDITIONS = [
@@ -176,18 +181,46 @@ const conditionColor = (v: string) =>
 interface LineItem {
   brand: string
   model_name_str: string
+  ram_str: string
+  ram_custom: string
   storage_str: string
+  rom_custom: string
   colour_str: string
   grade: string
   initial_status: string
   imei: string
   unit_cost: string
+  imeiError: string
 }
 
 const emptyLine = (): LineItem => ({
-  brand: '', model_name_str: '', storage_str: '', colour_str: '',
-  grade: 'C', initial_status: 'awaiting_refurb', imei: '', unit_cost: '',
+  brand: '', model_name_str: '',
+  ram_str: '', ram_custom: '',
+  storage_str: '', rom_custom: '',
+  colour_str: '',
+  grade: 'C', initial_status: 'awaiting_refurb',
+  imei: '', unit_cost: '',
+  imeiError: '',
 })
+
+const fieldStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', border: '1px solid #d1d5db',
+  borderRadius: 6, fontSize: 13, outline: 'none', background: '#fff',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b',
+  marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px',
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      {children}
+    </div>
+  )
+}
 
 function NewPOModal({ open, onClose, suppliers, onSuccess }: {
   open: boolean; onClose: () => void
@@ -199,12 +232,27 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([emptyLine()])
 
-  const updateLine = (i: number, field: keyof LineItem, value: string) => {
+  const updateLine = (i: number, patch: Partial<LineItem>) => {
     setLines(prev => {
       const next = [...prev]
-      next[i] = { ...next[i], [field]: value }
+      next[i] = { ...next[i], ...patch }
       return next
     })
+  }
+
+  const validateIMEI = (imei: string, idx: number): string => {
+    const digits = imei.replace(/\D/g, '')
+    if (!digits) return ''
+    if (digits.length !== 15) return 'IMEI must be exactly 15 digits'
+    const dupe = lines.findIndex((l, j) => j !== idx && l.imei.replace(/\D/g, '') === digits)
+    if (dupe !== -1) return `Duplicate of Device ${dupe + 1}`
+    return ''
+  }
+
+  const handleIMEIChange = (i: number, raw: string) => {
+    const digits = raw.replace(/\D/g, '')
+    const error = validateIMEI(digits, i)
+    updateLine(i, { imei: digits, imeiError: error })
   }
 
   const mut = useMutation({
@@ -223,8 +271,19 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!supplierId) { toast.error('Please select a supplier'); return }
+
     const validLines = lines.filter(l => l.imei.trim() && l.brand.trim() && l.model_name_str.trim())
     if (!validLines.length) { toast.error('Add at least one device with IMEI, brand and model'); return }
+
+    const errors = lines.map((l, i) => ({ i, err: validateIMEI(l.imei, i) })).filter(x => x.err)
+    if (errors.length) {
+      toast.error('Fix IMEI errors before submitting')
+      setLines(prev => prev.map((l, i) => ({ ...l, imeiError: validateIMEI(l.imei, i) })))
+      return
+    }
+
+    const missingFields = validLines.filter(l => !l.colour_str.trim())
+    if (missingFields.length) { toast.error('Colour is required for all devices'); return }
 
     mut.mutate({
       supplier_id: supplierId,
@@ -234,7 +293,8 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
         line_type: 'device',
         brand: l.brand.trim(),
         model_name_str: l.model_name_str.trim(),
-        storage_str: l.storage_str.trim(),
+        ram_str: (l.ram_str === 'Other' ? l.ram_custom : l.ram_str).trim() || undefined,
+        storage_str: (l.storage_str === 'Other' ? l.rom_custom : l.storage_str).trim() || undefined,
         colour_str: l.colour_str.trim(),
         grade: l.grade,
         initial_status: l.initial_status,
@@ -244,95 +304,190 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
     })
   }
 
-  const cellStyle: React.CSSProperties = {
-    padding: '5px 4px', border: '1px solid #d1d5db', borderRadius: 4,
-    fontSize: 12, width: '100%', outline: 'none',
-  }
-
   return (
-    <Modal open={open} onClose={handleClose} title="New Purchase Order">
+    <Modal open={open} onClose={handleClose} title="New Purchase Order" maxWidth={1100}>
       <form onSubmit={submit}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        {/* PO header fields */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#374151' }}>Supplier *</label>
-            <select value={supplierId} onChange={e => setSupplierId(e.target.value)} required style={{ ...cellStyle, padding: '7px 8px' }}>
+            <label style={{ ...labelStyle, marginBottom: 6 }}>Supplier *</label>
+            <select value={supplierId} onChange={e => setSupplierId(e.target.value)} required
+              style={{ ...fieldStyle }}>
               <option value="">Select supplier…</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <Input label="Shipping Cost (₦)" type="number" value={shippingCost}
             onChange={e => setShippingCost(e.target.value)} style={{ marginBottom: 0 }} />
+          <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)}
+            style={{ marginBottom: 0 }} />
         </div>
-        <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
 
-        <div style={{ marginTop: 4, marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>
+        {/* Devices section */}
+        <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: 16, marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginBottom: 14 }}>
             Devices / Items
           </div>
 
-          {/* Column headers */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1.2fr 0.7fr 0.7fr 0.5fr 1.1fr 1.3fr 0.7fr 28px',
-            gap: 4, marginBottom: 4,
-          }}>
-            {['Brand', 'Model Name', 'Storage', 'Colour', 'Grade', 'Condition', 'IMEI', 'Cost (₦)', ''].map(h => (
-              <div key={h} style={{ fontSize: 10, fontWeight: 700, color: '#64748b', padding: '0 2px' }}>{h}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {lines.map((line, i) => (
+              <div key={i} style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: 10,
+                padding: '16px 20px',
+                background: '#f8fafc',
+                position: 'relative',
+              }}>
+                {/* Card title */}
+                <div style={{
+                  fontSize: 12, fontWeight: 700, color: '#475569',
+                  marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px',
+                }}>
+                  Device {i + 1}
+                </div>
+
+                {/* Row 1: IMEI, Brand, Model Name */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1.2fr', gap: 12, marginBottom: 12 }}>
+                  <Field label="IMEI *">
+                    <input
+                      placeholder="353123456789012"
+                      value={line.imei}
+                      onChange={e => handleIMEIChange(i, e.target.value)}
+                      maxLength={15}
+                      inputMode="numeric"
+                      style={{
+                        ...fieldStyle,
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        borderColor: line.imeiError ? '#ef4444' : '#d1d5db',
+                      }}
+                    />
+                    {line.imeiError && (
+                      <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{line.imeiError}</div>
+                    )}
+                    {line.imei && !line.imeiError && line.imei.length === 15 && (
+                      <div style={{ fontSize: 11, color: '#16a34a', marginTop: 3 }}>✓ Valid IMEI</div>
+                    )}
+                  </Field>
+                  <Field label="Brand *">
+                    <input
+                      placeholder="Samsung"
+                      value={line.brand}
+                      onChange={e => updateLine(i, { brand: e.target.value })}
+                      style={fieldStyle}
+                    />
+                  </Field>
+                  <Field label="Model Name *">
+                    <input
+                      placeholder="Galaxy S21"
+                      value={line.model_name_str}
+                      onChange={e => updateLine(i, { model_name_str: e.target.value })}
+                      style={fieldStyle}
+                    />
+                  </Field>
+                </div>
+
+                {/* Row 2: RAM, ROM, Colour */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <Field label="RAM">
+                    <select value={line.ram_str} onChange={e => updateLine(i, { ram_str: e.target.value })} style={fieldStyle}>
+                      <option value="">— Select —</option>
+                      {RAM_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    {line.ram_str === 'Other' && (
+                      <input
+                        placeholder="e.g. 3GB"
+                        value={line.ram_custom}
+                        onChange={e => updateLine(i, { ram_custom: e.target.value })}
+                        style={{ ...fieldStyle, marginTop: 6 }}
+                      />
+                    )}
+                  </Field>
+                  <Field label="ROM (Storage)">
+                    <select value={line.storage_str} onChange={e => updateLine(i, { storage_str: e.target.value })} style={fieldStyle}>
+                      <option value="">— Select —</option>
+                      {ROM_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    {line.storage_str === 'Other' && (
+                      <input
+                        placeholder="e.g. 4TB"
+                        value={line.rom_custom}
+                        onChange={e => updateLine(i, { rom_custom: e.target.value })}
+                        style={{ ...fieldStyle, marginTop: 6 }}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Colour *">
+                    <input
+                      placeholder="Black"
+                      value={line.colour_str}
+                      onChange={e => updateLine(i, { colour_str: e.target.value })}
+                      style={fieldStyle}
+                    />
+                  </Field>
+                </div>
+
+                {/* Row 3: Grade, Condition, Cost, Remove */}
+                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 160px auto', gap: 12, alignItems: 'end' }}>
+                  <Field label="Grade">
+                    <select value={line.grade} onChange={e => updateLine(i, { grade: e.target.value })} style={fieldStyle}>
+                      {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Condition">
+                    <select
+                      value={line.initial_status}
+                      onChange={e => updateLine(i, { initial_status: e.target.value })}
+                      style={{ ...fieldStyle, color: conditionColor(line.initial_status), fontWeight: 600 }}
+                    >
+                      {CONDITIONS.map(c => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Cost (₦) *">
+                    <input
+                      placeholder="0.00"
+                      type="number"
+                      value={line.unit_cost}
+                      onChange={e => updateLine(i, { unit_cost: e.target.value })}
+                      style={fieldStyle}
+                      min="0"
+                      step="0.01"
+                    />
+                  </Field>
+                  <div style={{ paddingBottom: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => setLines(lines.filter((_, j) => j !== i))}
+                      disabled={lines.length === 1}
+                      style={{
+                        background: lines.length === 1 ? '#f1f5f9' : '#fee2e2',
+                        border: '1px solid',
+                        borderColor: lines.length === 1 ? '#cbd5e1' : '#fca5a5',
+                        borderRadius: 6,
+                        color: lines.length === 1 ? '#94a3b8' : '#dc2626',
+                        cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
+                        padding: '8px 14px',
+                        fontWeight: 700,
+                        fontSize: 13,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
 
-          {lines.map((line, i) => (
-            <div key={i} style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1.2fr 0.7fr 0.7fr 0.5fr 1.1fr 1.3fr 0.7fr 28px',
-              gap: 4, marginBottom: 6,
-            }}>
-              <input placeholder="Samsung" value={line.brand}
-                onChange={e => updateLine(i, 'brand', e.target.value)}
-                style={cellStyle} required />
-              <input placeholder="Galaxy S21" value={line.model_name_str}
-                onChange={e => updateLine(i, 'model_name_str', e.target.value)}
-                style={cellStyle} required />
-              <select value={line.storage_str} onChange={e => updateLine(i, 'storage_str', e.target.value)} style={cellStyle}>
-                <option value="">—</option>
-                {STORAGE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <input placeholder="Black" value={line.colour_str}
-                onChange={e => updateLine(i, 'colour_str', e.target.value)}
-                style={cellStyle} />
-              <select value={line.grade} onChange={e => updateLine(i, 'grade', e.target.value)} style={cellStyle}>
-                {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-              <select
-                value={line.initial_status}
-                onChange={e => updateLine(i, 'initial_status', e.target.value)}
-                style={{ ...cellStyle, color: conditionColor(line.initial_status), fontWeight: 600 }}
-              >
-                {CONDITIONS.map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-              <input placeholder="353123456789012" value={line.imei}
-                onChange={e => updateLine(i, 'imei', e.target.value)}
-                style={{ ...cellStyle, fontFamily: 'monospace' }} required
-                maxLength={20} />
-              <input placeholder="0.00" type="number" value={line.unit_cost}
-                onChange={e => updateLine(i, 'unit_cost', e.target.value)}
-                style={cellStyle} required min="0" step="0.01" />
-              <button type="button"
-                onClick={() => setLines(lines.filter((_, j) => j !== i))}
-                disabled={lines.length === 1}
-                style={{
-                  background: 'none', border: 'none', cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
-                  color: '#ef4444', fontWeight: 700, fontSize: 16, opacity: lines.length === 1 ? 0.3 : 1,
-                }}>✕</button>
-            </div>
-          ))}
-
-          <Btn size="sm" variant="ghost" type="button"
-            onClick={() => setLines([...lines, emptyLine()])}>
-            + Add Device
-          </Btn>
+          <div style={{ marginTop: 12 }}>
+            <Btn size="sm" variant="ghost" type="button"
+              onClick={() => setLines([...lines, emptyLine()])}>
+              + Add Device
+            </Btn>
+          </div>
         </div>
 
         <div style={{

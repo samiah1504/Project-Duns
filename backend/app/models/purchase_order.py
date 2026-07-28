@@ -77,6 +77,7 @@ class POLineItem(Base):
     # Inline device details (avoids requiring pre-created phone models)
     brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
     model_name_str: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ram_str: Mapped[str | None] = mapped_column(String(20), nullable=True)
     storage_str: Mapped[str | None] = mapped_column(String(50), nullable=True)
     colour_str: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Initial device condition / routing at intake

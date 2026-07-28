@@ -17,6 +17,7 @@ router = APIRouter()
 class PhoneModelCreate(BaseModel):
     brand: str
     model_name: str
+    ram: Optional[str] = None
     storage: Optional[str] = None
     colour: Optional[str] = None
     default_specs: Optional[Dict[str, Any]] = None
@@ -26,6 +27,7 @@ class PhoneModelOut(BaseModel):
     id: str
     brand: str
     model_name: str
+    ram: Optional[str] = None
     storage: Optional[str] = None
     colour: Optional[str] = None
     default_specs: Optional[Dict[str, Any]] = None

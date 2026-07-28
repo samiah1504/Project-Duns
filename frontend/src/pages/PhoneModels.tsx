@@ -8,14 +8,16 @@ import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input } from '../component
 type ModelForm = {
   brand: string
   model_name: string
+  ram: string
   storage: string
   colour: string
 }
 
-const empty: ModelForm = { brand: '', model_name: '', storage: '', colour: '' }
+const empty: ModelForm = { brand: '', model_name: '', ram: '', storage: '', colour: '' }
 
 const COMMON_BRANDS = ['Apple', 'Samsung', 'Tecno', 'Infinix', 'Itel', 'Xiaomi', 'OnePlus', 'Google', 'Nokia']
-const COMMON_STORAGE = ['16GB', '32GB', '64GB', '128GB', '256GB', '512GB', '1TB']
+const COMMON_RAM = ['4GB', '6GB', '8GB', '12GB', '16GB', '18GB', '24GB']
+const COMMON_STORAGE = ['16GB', '32GB', '64GB', '128GB', '256GB', '512GB', '1TB', '2TB']
 
 export default function PhoneModels() {
   const qc = useQueryClient()
@@ -28,7 +30,7 @@ export default function PhoneModels() {
     queryFn: () => getPhoneModels().then(r => r.data),
   })
 
-  const set = (k: keyof ModelForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof ModelForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
   const mut = useMutation({
@@ -43,6 +45,7 @@ export default function PhoneModels() {
     return (
       m.brand.toLowerCase().includes(q) ||
       m.model_name.toLowerCase().includes(q) ||
+      (m.ram ?? '').toLowerCase().includes(q) ||
       (m.storage ?? '').toLowerCase().includes(q) ||
       (m.colour ?? '').toLowerCase().includes(q)
     )
@@ -80,10 +83,11 @@ export default function PhoneModels() {
           <div key={brand} style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 8 }}>{brand.toUpperCase()}</div>
             <Card style={{ padding: 0 }}>
-              <Table headers={['Model Name', 'Storage', 'Colour', 'Added']}>
+              <Table headers={['Model Name', 'RAM', 'ROM', 'Colour', 'Added']}>
                 {items.map(m => (
                   <TR key={m.id}>
                     <TD><strong>{m.model_name}</strong></TD>
+                    <TD style={{ color: '#64748b' }}>{m.ram ?? '—'}</TD>
                     <TD style={{ color: '#64748b' }}>{m.storage ?? '—'}</TD>
                     <TD style={{ color: '#64748b' }}>{m.colour ?? '—'}</TD>
                     <TD style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(m.created_at).toLocaleDateString('en-GB')}</TD>
@@ -101,6 +105,7 @@ export default function PhoneModels() {
           mut.mutate({
             brand: form.brand,
             model_name: form.model_name,
+            ram: form.ram || undefined,
             storage: form.storage || undefined,
             colour: form.colour || undefined,
           })
@@ -123,9 +128,22 @@ export default function PhoneModels() {
 
           <Input label="Model Name *" value={form.model_name} onChange={set('model_name')} required placeholder="e.g. iPhone 11, Galaxy A54…" />
 
-          {/* Storage — datalist */}
+          {/* RAM */}
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4, color: '#374151' }}>Storage</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4, color: '#374151' }}>RAM</label>
+            <select
+              value={form.ram}
+              onChange={e => setForm(f => ({ ...f, ram: e.target.value }))}
+              style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, background: '#fff' }}
+            >
+              <option value="">— Select —</option>
+              {COMMON_RAM.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          {/* ROM / Storage — datalist */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4, color: '#374151' }}>ROM (Storage)</label>
             <input
               list="storage-list"
               value={form.storage}

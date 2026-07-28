@@ -11,6 +11,7 @@ class POLineItemCreate(BaseModel):
     # Inline device details — auto-creates / finds PhoneModel on save
     brand: Optional[str] = None
     model_name_str: Optional[str] = None
+    ram_str: Optional[str] = None
     storage_str: Optional[str] = None
     colour_str: Optional[str] = None
     imei: Optional[str] = None
@@ -38,6 +39,7 @@ class POLineItemOut(BaseModel):
     notes: Optional[str] = None
     brand: Optional[str] = None
     model_name_str: Optional[str] = None
+    ram_str: Optional[str] = None
     storage_str: Optional[str] = None
     colour_str: Optional[str] = None
 
@@ -48,6 +50,7 @@ class PhoneModelSimple(BaseModel):
     id: str
     brand: str
     model_name: str
+    ram: Optional[str] = None
     storage: Optional[str] = None
     colour: Optional[str] = None
 

@@ -55,6 +55,7 @@ export interface PhoneModel {
   id: string
   brand: string
   model_name: string
+  ram?: string
   storage?: string
   colour?: string
   created_at: string
@@ -121,6 +122,7 @@ export interface POLineItem {
   notes?: string
   brand?: string
   model_name_str?: string
+  ram_str?: string
   storage_str?: string
   colour_str?: string
 }
@@ -130,6 +132,7 @@ export interface DeviceWithModel extends Device {
     id: string
     brand: string
     model_name: string
+    ram?: string
     storage?: string
     colour?: string
   }
@@ -182,7 +185,7 @@ export interface SaleLineItem {
   device?: {
     imei: string
     grade: string
-    model?: { brand: string; model_name: string; storage?: string; colour?: string }
+    model?: { brand: string; model_name: string; ram?: string; storage?: string; colour?: string }
   }
 }
 

@@ -16,6 +16,7 @@ class PhoneModel(Base):
     )
     brand: Mapped[str] = mapped_column(String(100), nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    ram: Mapped[str | None] = mapped_column(String(20), nullable=True)
     storage: Mapped[str | None] = mapped_column(String(50), nullable=True)
     colour: Mapped[str | None] = mapped_column(String(50), nullable=True)
     default_specs: Mapped[dict | None] = mapped_column(JSON, nullable=True)

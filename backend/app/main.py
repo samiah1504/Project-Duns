@@ -57,6 +57,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0",
             "ALTER TABLE sales ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(12,2) NOT NULL DEFAULT 0",
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS initial_status VARCHAR(30)",
+            "ALTER TABLE phone_models ADD COLUMN IF NOT EXISTS ram VARCHAR(20)",
+            "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS ram_str VARCHAR(20)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_modules TEXT",
             # User management update: username, employee_id, must_change_password
             """DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='email') THEN ALTER TABLE users RENAME COLUMN email TO username; END IF; END $$""",

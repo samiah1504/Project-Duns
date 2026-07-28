@@ -44,6 +44,7 @@ async def _find_or_create_phone_model(
     db: AsyncSession,
     brand: str,
     model_name: str,
+    ram: Optional[str],
     storage: Optional[str],
     colour: Optional[str],
 ) -> PhoneModel:
@@ -52,6 +53,8 @@ async def _find_or_create_phone_model(
         PhoneModel.brand == brand,
         PhoneModel.model_name == model_name,
     )
+    if ram:
+        q = q.where(PhoneModel.ram == ram)
     if storage:
         q = q.where(PhoneModel.storage == storage)
     if colour:
@@ -62,7 +65,7 @@ async def _find_or_create_phone_model(
     if pm:
         return pm
 
-    pm = PhoneModel(brand=brand, model_name=model_name, storage=storage, colour=colour)
+    pm = PhoneModel(brand=brand, model_name=model_name, ram=ram, storage=storage, colour=colour)
     db.add(pm)
     await db.flush()
     return pm
@@ -98,6 +101,7 @@ async def create_purchase_order(
                 db,
                 brand=item_data.brand,
                 model_name=item_data.model_name_str,
+                ram=item_data.ram_str,
                 storage=item_data.storage_str,
                 colour=item_data.colour_str,
             )
@@ -115,6 +119,7 @@ async def create_purchase_order(
             notes=item_data.notes,
             brand=item_data.brand,
             model_name_str=item_data.model_name_str,
+            ram_str=item_data.ram_str,
             storage_str=item_data.storage_str,
             colour_str=item_data.colour_str,
         )

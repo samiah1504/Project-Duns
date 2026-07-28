@@ -257,17 +257,21 @@ export function Select({ label, children, ...props }: { label?: string } & React
   )
 }
 
-export function Modal({ open, onClose, title, children }: {
-  open: boolean; onClose: () => void; title: string; children: ReactNode
+export function Modal({ open, onClose, title, children, maxWidth }: {
+  open: boolean; onClose: () => void; title: string; children: ReactNode; maxWidth?: number | string
 }) {
   if (!open) return null
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999,
+      padding: '16px',
     }} onClick={onClose}>
       <div style={{
-        background: '#fff', borderRadius: 12, padding: 28, minWidth: 420, maxWidth: 600,
+        background: '#fff', borderRadius: 12, padding: 28,
+        width: maxWidth ? '95vw' : undefined,
+        minWidth: maxWidth ? undefined : 420,
+        maxWidth: maxWidth ?? 600,
         maxHeight: '90vh', overflow: 'auto',
       }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
