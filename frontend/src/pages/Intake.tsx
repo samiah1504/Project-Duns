@@ -74,6 +74,9 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
       </div>`
   }).join('')
 
+  // Explicit orientation keyword so browsers/drivers don't guess wrong.
+  const orientation = w >= h ? 'landscape' : 'portrait'
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -81,20 +84,43 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
 <title>Phone Labels</title>
 <style>
   @page {
-    size: ${w}mm ${h}mm;
+    size: ${w}mm ${h}mm ${orientation};
     margin: 0;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    width: ${w}mm;
+
+  /* ── Screen styles ─────────────────────────────────────────────────────── */
+  html {
     font-family: Arial, Helvetica, sans-serif;
-    background: #fff;
+    background: #e2e8f0;
+  }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #e2e8f0;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    /* Do NOT constrain body width here — that's what broke the toolbar */
+  }
+  .toolbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 10px 16px;
+    background: #1e293b;
+    color: #fff;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: nowrap;
+    min-height: 44px;
   }
   .grid {
-    display: block;
-    padding: 0;
+    margin-top: 56px; /* clear the fixed toolbar */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    gap: 12px;
   }
   .label {
     width: ${w}mm;
@@ -107,9 +133,12 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
     gap: ${(0.8 * scale).toFixed(2)}mm;
     text-align: center;
     background: #fff;
-    page-break-after: always;
+    border: 0.3mm solid #ccc;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
     overflow: hidden;
   }
+
+  /* ── Type styles ───────────────────────────────────────────────────────── */
   .company {
     font-size: ${pt(5.5)};
     font-weight: 700;
@@ -119,7 +148,6 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
     line-height: 1.15;
   }
   .model {
-    /* font-size set inline per device */
     font-weight: 700;
     color: #111;
     line-height: 1.15;
@@ -146,7 +174,6 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
     color: #111;
     letter-spacing: 0.5px;
     line-height: 1;
-    margin-bottom: ${(0.3 * scale).toFixed(2)}mm;
   }
   .imei {
     font-size: ${pt(8.5)};
@@ -157,25 +184,28 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
     line-height: 1.1;
     word-break: break-all;
   }
+
+  /* ── Print overrides ───────────────────────────────────────────────────── */
   @media print {
-    body { margin: 0; }
-    .no-print { display: none !important; }
-    .label { page-break-after: always; }
+    html, body { background: #fff; margin: 0; padding: 0; }
+    .toolbar { display: none !important; }
+    .grid { margin-top: 0; padding: 0; gap: 0; align-items: flex-start; background: #fff; }
+    .label { border: none; box-shadow: none; page-break-after: always; break-after: page; }
   }
 </style>
 </head>
 <body>
-  <div class="no-print" style="padding:8px;background:#1e293b;color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:10">
-    <span style="flex:1;font-size:13px">${devices.length} label(s) — ${size.name}</span>
-    <label style="font-size:12px;color:#94a3b8">Size:
+  <div class="toolbar">
+    <span style="flex:1;font-size:13px;white-space:nowrap">${devices.length} label(s) — ${size.name}</span>
+    <label style="font-size:12px;color:#94a3b8;white-space:nowrap">Size:
       <select id="sizeSelect" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:none;font-size:12px">
         ${getLabelSizes().map(s =>
           `<option value="${s.id}" ${s.id === size.id ? 'selected' : ''}>${s.name}</option>`
         ).join('')}
       </select>
     </label>
-    <button onclick="window.print()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700">🖨 Print</button>
-    <button onclick="window.close()" style="padding:6px 16px;background:#475569;color:#fff;border:none;border-radius:4px;cursor:pointer">Close</button>
+    <button onclick="window.print()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700;white-space:nowrap">🖨 Print</button>
+    <button onclick="window.close()" style="padding:6px 16px;background:#475569;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Close</button>
   </div>
   <div class="grid">${labels}</div>
   <script>
