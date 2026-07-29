@@ -2,9 +2,7 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { PageHeader, Card, Btn } from '../components/Layout'
 import { getCompanySettings, saveCompanySettings, CompanySettings } from '../hooks/useCompanySettings'
-import {
-  getLabelSizes, saveLabelSizes, LabelSize,
-} from '../hooks/useLabelSizes'
+import { getLabelSizes, saveLabelSizes, LabelSize } from '../hooks/useLabelSizes'
 
 // ─── Label Size Manager ───────────────────────────────────────────────────────
 
@@ -54,11 +52,10 @@ function LabelSizeSettings() {
     const dims = validateForm()
     if (!dims) return
     const next: LabelSize = {
-      id: `custom-${Date.now()}`,
+      id: `size-${Date.now()}`,
       name: form.name.trim(),
       widthMm: dims.widthMm,
       heightMm: dims.heightMm,
-      isDefault: false,
     }
     persist([...sizes, next])
     toast.success('Label size added')
@@ -94,7 +91,7 @@ function LabelSizeSettings() {
         <div>
           <h3 style={{ margin: 0, fontSize: 15 }}>Label Printing Sizes</h3>
           <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
-            Configure label dimensions for your printer. The default 30 mm × 25 mm size cannot be deleted.
+            Add label sizes to match your printer paper. All sizes can be edited or deleted.
           </p>
         </div>
         {!adding && !editing && (
@@ -112,6 +109,13 @@ function LabelSizeSettings() {
           </tr>
         </thead>
         <tbody>
+          {sizes.length === 0 && (
+            <tr>
+              <td colSpan={4} style={{ padding: '16px 10px', color: '#94a3b8', fontSize: 13, textAlign: 'center' }}>
+                No label sizes yet. Click "+ Add Size" to add one.
+              </td>
+            </tr>
+          )}
           {sizes.map(s => (
             <tr key={s.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
               {editing === s.id ? (
@@ -137,24 +141,13 @@ function LabelSizeSettings() {
                 </>
               ) : (
                 <>
-                  <td style={{ padding: '6px 10px', fontWeight: s.isDefault ? 600 : 400 }}>
-                    {s.name}
-                    {s.isDefault && (
-                      <span style={{
-                        marginLeft: 8, fontSize: 10, fontWeight: 700,
-                        background: '#dbeafe', color: '#1d4ed8',
-                        padding: '1px 6px', borderRadius: 3,
-                      }}>DEFAULT</span>
-                    )}
-                  </td>
+                  <td style={{ padding: '6px 10px' }}>{s.name}</td>
                   <td style={{ padding: '6px 10px', color: '#475569' }}>{s.widthMm}</td>
                   <td style={{ padding: '6px 10px', color: '#475569' }}>{s.heightMm}</td>
                   <td style={{ padding: '6px 10px' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn size="sm" variant="secondary" onClick={() => startEdit(s)}>Edit</Btn>
-                      {!s.isDefault && (
-                        <Btn size="sm" variant="danger" onClick={() => handleDelete(s.id)}>Delete</Btn>
-                      )}
+                      <Btn size="sm" variant="danger" onClick={() => handleDelete(s.id)}>Delete</Btn>
                     </div>
                   </td>
                 </>

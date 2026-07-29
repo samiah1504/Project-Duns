@@ -41,22 +41,17 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
   const w = size.widthMm
   const h = size.heightMm
 
-  // Base reference: 30 × 25 mm. Scale both axes and take the smaller factor
-  // so content never overflows on either dimension.
-  const scale = Math.min(w / 30, h / 25)
+  // Drive all sizing off the smaller dimension (usually height on a label).
+  // 1 mm = 2.835 pt. Multiply the mm fraction by 2.835 to get pt.
+  const ref = Math.min(w, h)
+  const pt = (fraction: number) => `${(ref * fraction * 2.835).toFixed(2)}pt`
+  const mm = (fraction: number) => `${(ref * fraction).toFixed(2)}mm`
 
-  // Font sizing helper — returns a pt value proportional to the label size.
-  // 1 mm ≈ 2.835 pt, but we work in relative pt and let the browser handle mm.
-  const pt = (base: number) => `${(base * scale).toFixed(2)}pt`
-
-  // Padding scales with the label so small labels still breathe.
-  const pad = `${(1.2 * scale).toFixed(2)}mm`
-
-  // Model text: if the full name is long (>20 chars) reduce font slightly.
+  // Model text: shrink slightly for long names so nothing is clipped.
   const modelFontForDevice = (d: LabelDevice) => {
     const name = `${d.brand} ${d.model_name}`
-    const base = name.length > 22 ? 7.5 : 9
-    return pt(base)
+    const fraction = name.length > 22 ? 0.11 : 0.13
+    return pt(fraction)
   }
 
   const labels = devices.map((d) => {
@@ -125,12 +120,12 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
   .label {
     width: ${w}mm;
     height: ${h}mm;
-    padding: ${pad};
+    padding: ${mm(0.05)};
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: ${(0.8 * scale).toFixed(2)}mm;
+    gap: ${mm(0.04)};
     text-align: center;
     background: #fff;
     border: 0.3mm solid #ccc;
@@ -140,48 +135,48 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
 
   /* ── Type styles ───────────────────────────────────────────────────────── */
   .company {
-    font-size: ${pt(5.5)};
+    font-size: ${pt(0.10)};
     font-weight: 700;
     letter-spacing: 0.5px;
     text-transform: uppercase;
     color: #111;
-    line-height: 1.15;
+    line-height: 1.2;
   }
   .model {
     font-weight: 700;
     color: #111;
-    line-height: 1.15;
+    line-height: 1.2;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .specs {
-    font-size: ${pt(5.5)};
+    font-size: ${pt(0.09)};
     font-weight: 500;
     color: #333;
-    line-height: 1.15;
+    line-height: 1.2;
   }
   .colour {
-    font-size: ${pt(5.5)};
+    font-size: ${pt(0.09)};
     font-weight: 500;
     color: #444;
-    line-height: 1.15;
+    line-height: 1.2;
   }
   .imei-label {
-    font-size: ${pt(5.5)};
+    font-size: ${pt(0.09)};
     font-weight: 700;
     color: #111;
     letter-spacing: 0.5px;
-    line-height: 1;
+    line-height: 1.2;
   }
   .imei {
-    font-size: ${pt(8.5)};
+    font-size: ${pt(0.17)};
     font-weight: 700;
     font-family: 'Courier New', Courier, monospace;
     color: #000;
     letter-spacing: 0.5px;
-    line-height: 1.1;
+    line-height: 1.2;
     word-break: break-all;
   }
 
@@ -220,6 +215,10 @@ function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
 function printDeviceLabels(devices: LabelDevice[], size?: LabelSize) {
   if (!devices.length) return
   const selectedSize = size ?? getSelectedLabelSize()
+  if (!selectedSize) {
+    toast.error('No label size configured. Go to Settings → Label Printing Sizes and add one.')
+    return
+  }
   const sizes = getLabelSizes()
   const w = window.open('', '_blank', 'width=900,height=700')
   if (!w) { toast.error('Pop-up blocked — please allow pop-ups for this page'); return }
