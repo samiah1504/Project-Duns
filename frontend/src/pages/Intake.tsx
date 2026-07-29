@@ -1,7 +1,6 @@
 import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { barcodeDataURL } from '../utils/barcode'
 import { getCompanySettings } from '../hooks/useCompanySettings'
 import {
   getLabelSizes, getSelectedLabelSize, saveSelectedLabelSizeId, LabelSize,
@@ -15,106 +14,177 @@ import {
   PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select, fmt,
 } from '../components/Layout'
 
-// ─── Barcode helpers ──────────────────────────────────────────────────────────
+// ─── Label printing ───────────────────────────────────────────────────────────
 
 interface LabelDevice {
   imei: string
-  inventory_number: string
   brand: string
   model_name: string
   ram: string
   storage: string
   colour: string
-  grade: string
 }
 
+/**
+ * Responsive label engine.
+ *
+ * All dimensions are in mm. Font sizes are derived from the label area so the
+ * layout adapts to any selected size without clipping or rotation issues.
+ *
+ * The @page rule sets the exact paper size and strips all browser margins,
+ * headers and footers. Orientation is implicit: width < height → portrait,
+ * width > height → landscape — the browser respects whichever the @page size
+ * declares without needing an explicit orientation keyword.
+ */
 function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
   const co = getCompanySettings()
-  const today = new Date().toLocaleDateString('en-NG', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
   const w = size.widthMm
   const h = size.heightMm
 
-  // Scale font sizes relative to label area (base: 30×25mm)
+  // Base reference: 30 × 25 mm. Scale both axes and take the smaller factor
+  // so content never overflows on either dimension.
   const scale = Math.min(w / 30, h / 25)
-  const fs = (base: number) => `${(base * scale).toFixed(1)}pt`
+
+  // Font sizing helper — returns a pt value proportional to the label size.
+  // 1 mm ≈ 2.835 pt, but we work in relative pt and let the browser handle mm.
+  const pt = (base: number) => `${(base * scale).toFixed(2)}pt`
+
+  // Padding scales with the label so small labels still breathe.
+  const pad = `${(1.2 * scale).toFixed(2)}mm`
+
+  // Model text: if the full name is long (>20 chars) reduce font slightly.
+  const modelFontForDevice = (d: LabelDevice) => {
+    const name = `${d.brand} ${d.model_name}`
+    const base = name.length > 22 ? 7.5 : 9
+    return pt(base)
+  }
 
   const labels = devices.map((d) => {
-    const barcodeSrc = barcodeDataURL(d.inventory_number)
+    const model = `${d.brand} ${d.model_name}`
+    const ramRom = [d.ram && `RAM: ${d.ram}`, d.storage && `ROM: ${d.storage}`]
+      .filter(Boolean).join(' | ')
     return `
       <div class="label">
         <div class="company">${co.name}</div>
-        <div class="model-line">${d.brand} ${d.model_name}</div>
-        <div class="specs">
-          <span class="spec-item">RAM:${d.ram || '—'}</span>
-          <span class="spec-item">ROM:${d.storage || '—'}</span>
-          <span class="spec-item">${d.colour || '—'}</span>
-          <span class="spec-item">Gr:<strong>${d.grade}</strong></span>
-        </div>
-        <div class="imei-line">IMEI: ${d.imei}</div>
-        <img class="barcode" src="${barcodeSrc}" alt="barcode" />
-        <div class="inv-line">${d.inventory_number}</div>
-        <div class="date-line">${today}</div>
+        <div class="model" style="font-size:${modelFontForDevice(d)}">${model}</div>
+        ${ramRom ? `<div class="specs">${ramRom}</div>` : ''}
+        ${d.colour ? `<div class="colour">Colour: ${d.colour}</div>` : ''}
+        <div class="imei-label">IMEI</div>
+        <div class="imei">${d.imei}</div>
       </div>`
   }).join('')
 
-  return `<!DOCTYPE html><html><head><title>Barcode Labels</title>
-  <style>
-    @page {
-      size: ${w}mm ${h}mm;
-      margin: 0;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .grid { display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
-    .label {
-      width: ${w}mm; height: ${h}mm;
-      border: 0.3mm solid #999;
-      padding: 1mm 1.5mm;
-      page-break-inside: avoid;
-      page-break-after: always;
-      background: #fff;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .company { font-size: ${fs(5.5)}; color: #555; text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.1; }
-    .model-line { font-size: ${fs(7)}; font-weight: 700; color: #111; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .specs { display: flex; gap: 1mm; font-size: ${fs(5)}; color: #333; flex-wrap: wrap; line-height: 1.1; }
-    .spec-item { background: #f0f0f0; padding: 0 1mm; border-radius: 0.5mm; white-space: nowrap; }
-    .imei-line { font-size: ${fs(5)}; color: #444; font-family: monospace; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .barcode { width: 100%; height: auto; display: block; flex-shrink: 0; }
-    .inv-line { font-size: ${fs(5.5)}; font-family: monospace; font-weight: 700; text-align: center; letter-spacing: 1px; color: #111; line-height: 1.1; }
-    .date-line { font-size: ${fs(4.5)}; color: #999; text-align: right; line-height: 1.1; }
-    @media print {
-      body { margin: 0; }
-      .grid { gap: 0; padding: 0; }
-      .label { border-color: transparent; }
-      .no-print { display: none !important; }
-    }
-  </style></head>
-  <body>
-    <div class="no-print" id="toolbar" style="padding:8px;background:#1e293b;color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span style="flex:1;font-size:13px">${devices.length} label(s) — ${size.name}</span>
-      <label style="font-size:12px;color:#94a3b8">Size:
-        <select id="sizeSelect" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:none;font-size:12px">
-          ${getLabelSizes().map(s =>
-            `<option value="${s.id}" ${s.id === size.id ? 'selected' : ''}>${s.name}</option>`
-          ).join('')}
-        </select>
-      </label>
-      <button onclick="window.print()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700">🖨 Print</button>
-      <button onclick="window.close()" style="padding:6px 16px;background:#475569;color:#fff;border:none;border-radius:4px;cursor:pointer">Close</button>
-    </div>
-    <div class="grid">${labels}</div>
-    <script>
-      document.getElementById('sizeSelect')?.addEventListener('change', function() {
-        window.__onSizeChange && window.__onSizeChange(this.value)
-      })
-    </script>
-  </body></html>`
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Phone Labels</title>
+<style>
+  @page {
+    size: ${w}mm ${h}mm;
+    margin: 0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: ${w}mm;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .grid {
+    display: block;
+    padding: 0;
+  }
+  .label {
+    width: ${w}mm;
+    height: ${h}mm;
+    padding: ${pad};
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: ${(0.8 * scale).toFixed(2)}mm;
+    text-align: center;
+    background: #fff;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .company {
+    font-size: ${pt(5.5)};
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #111;
+    line-height: 1.15;
+  }
+  .model {
+    /* font-size set inline per device */
+    font-weight: 700;
+    color: #111;
+    line-height: 1.15;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .specs {
+    font-size: ${pt(5.5)};
+    font-weight: 500;
+    color: #333;
+    line-height: 1.15;
+  }
+  .colour {
+    font-size: ${pt(5.5)};
+    font-weight: 500;
+    color: #444;
+    line-height: 1.15;
+  }
+  .imei-label {
+    font-size: ${pt(5.5)};
+    font-weight: 700;
+    color: #111;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    margin-bottom: ${(0.3 * scale).toFixed(2)}mm;
+  }
+  .imei {
+    font-size: ${pt(8.5)};
+    font-weight: 700;
+    font-family: 'Courier New', Courier, monospace;
+    color: #000;
+    letter-spacing: 0.5px;
+    line-height: 1.1;
+    word-break: break-all;
+  }
+  @media print {
+    body { margin: 0; }
+    .no-print { display: none !important; }
+    .label { page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+  <div class="no-print" style="padding:8px;background:#1e293b;color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:10">
+    <span style="flex:1;font-size:13px">${devices.length} label(s) — ${size.name}</span>
+    <label style="font-size:12px;color:#94a3b8">Size:
+      <select id="sizeSelect" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:none;font-size:12px">
+        ${getLabelSizes().map(s =>
+          `<option value="${s.id}" ${s.id === size.id ? 'selected' : ''}>${s.name}</option>`
+        ).join('')}
+      </select>
+    </label>
+    <button onclick="window.print()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700">🖨 Print</button>
+    <button onclick="window.close()" style="padding:6px 16px;background:#475569;color:#fff;border:none;border-radius:4px;cursor:pointer">Close</button>
+  </div>
+  <div class="grid">${labels}</div>
+  <script>
+    document.getElementById('sizeSelect').addEventListener('change', function() {
+      window.__onSizeChange && window.__onSizeChange(this.value)
+    })
+  </script>
+</body>
+</html>`
 }
 
 function printDeviceLabels(devices: LabelDevice[], size?: LabelSize) {
@@ -148,13 +218,11 @@ function printDeviceLabels(devices: LabelDevice[], size?: LabelSize) {
 function deviceToLabel(d: DeviceWithModel): LabelDevice {
   return {
     imei: d.imei,
-    inventory_number: d.inventory_number ?? d.imei,
-    brand: d.model?.brand ?? '—',
-    model_name: d.model?.model_name ?? '—',
-    ram: d.model?.ram ?? '—',
-    storage: d.model?.storage ?? '—',
-    colour: d.model?.colour ?? '—',
-    grade: d.grade,
+    brand: d.model?.brand ?? '',
+    model_name: d.model?.model_name ?? '',
+    ram: d.model?.ram ?? '',
+    storage: d.model?.storage ?? '',
+    colour: d.model?.colour ?? '',
   }
 }
 
