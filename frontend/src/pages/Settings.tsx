@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { PageHeader, Card, Btn } from '../components/Layout'
 import { getCompanySettings, saveCompanySettings, CompanySettings } from '../hooks/useCompanySettings'
@@ -282,6 +283,20 @@ export default function Settings() {
           </Card>
 
           <LabelSizeSettings />
+
+          <Card style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15 }}>Label Designer</h3>
+                <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
+                  Design label templates, configure fields and print settings.
+                </p>
+              </div>
+              <Link to="/label-designer">
+                <Btn>Open Label Designer →</Btn>
+              </Link>
+            </div>
+          </Card>
         </div>
 
         {/* Preview */}

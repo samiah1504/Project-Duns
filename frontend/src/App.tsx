@@ -20,6 +20,7 @@ import Users from './pages/Users'
 import Suppliers from './pages/Suppliers'
 import PhoneModels from './pages/PhoneModels'
 import Settings from './pages/Settings'
+import LabelDesigner from './pages/LabelDesigner'
 import SaleDetail from './pages/SaleDetail'
 import Expenses from './pages/Expenses'
 
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="/suppliers" element={<ProtectedLayout><Suppliers /></ProtectedLayout>} />
             <Route path="/phone-models" element={<ProtectedLayout><PhoneModels /></ProtectedLayout>} />
             <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
+            <Route path="/label-designer" element={<ProtectedLayout><LabelDesigner /></ProtectedLayout>} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>

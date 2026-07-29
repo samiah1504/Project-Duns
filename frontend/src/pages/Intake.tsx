@@ -1,10 +1,11 @@
 import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { getCompanySettings } from '../hooks/useCompanySettings'
 import {
   getLabelSizes, getSelectedLabelSize, saveSelectedLabelSizeId, LabelSize,
 } from '../hooks/useLabelSizes'
+import { getDefaultTemplate, getTemplates } from '../hooks/useLabelTemplates'
+import { buildPrintHTML, DeviceForLabel } from '../utils/labelRenderer'
 import {
   getPurchaseOrders, getSuppliers, createPurchaseOrder,
   receivePurchaseOrder, getPODevices,
@@ -16,232 +17,36 @@ import {
 
 // ─── Label printing ───────────────────────────────────────────────────────────
 
-interface LabelDevice {
-  imei: string
-  brand: string
-  model_name: string
-  ram: string
-  storage: string
-  colour: string
-}
+type LabelDevice = DeviceForLabel
 
-/**
- * Responsive label engine.
- *
- * All dimensions are in mm. Font sizes are derived from the label area so the
- * layout adapts to any selected size without clipping or rotation issues.
- *
- * The @page rule sets the exact paper size and strips all browser margins,
- * headers and footers. Orientation is implicit: width < height → portrait,
- * width > height → landscape — the browser respects whichever the @page size
- * declares without needing an explicit orientation keyword.
- */
-function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
-  const co = getCompanySettings()
-  const w = size.widthMm
-  const h = size.heightMm
-
-  // Drive all sizing off the smaller dimension (usually height on a label).
-  // 1 mm = 2.835 pt. Multiply the mm fraction by 2.835 to get pt.
-  const ref = Math.min(w, h)
-  const pt = (fraction: number) => `${(ref * fraction * 2.835).toFixed(2)}pt`
-  const mm = (fraction: number) => `${(ref * fraction).toFixed(2)}mm`
-
-  // Model text: shrink slightly for long names so nothing is clipped.
-  const modelFontForDevice = (d: LabelDevice) => {
-    const name = `${d.brand} ${d.model_name}`
-    const fraction = name.length > 22 ? 0.11 : 0.13
-    return pt(fraction)
-  }
-
-  const labels = devices.map((d) => {
-    const model = `${d.brand} ${d.model_name}`
-    const ramRom = [d.ram && `RAM: ${d.ram}`, d.storage && `ROM: ${d.storage}`]
-      .filter(Boolean).join(' | ')
-    return `
-      <div class="label">
-        <div class="company">${co.name}</div>
-        <div class="model" style="font-size:${modelFontForDevice(d)}">${model}</div>
-        ${ramRom ? `<div class="specs">${ramRom}</div>` : ''}
-        ${d.colour ? `<div class="colour">Colour: ${d.colour}</div>` : ''}
-        <div class="imei-label">IMEI</div>
-        <div class="imei">${d.imei}</div>
-      </div>`
-  }).join('')
-
-  // Explicit orientation keyword so browsers/drivers don't guess wrong.
-  const orientation = w >= h ? 'landscape' : 'portrait'
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Phone Labels</title>
-<style>
-  @page {
-    size: ${w}mm ${h}mm ${orientation};
-    margin: 0;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  /* ── Screen styles ─────────────────────────────────────────────────────── */
-  html {
-    font-family: Arial, Helvetica, sans-serif;
-    background: #e2e8f0;
-  }
-  body {
-    font-family: Arial, Helvetica, sans-serif;
-    background: #e2e8f0;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    /* Do NOT constrain body width here — that's what broke the toolbar */
-  }
-  .toolbar {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 100;
-    padding: 10px 16px;
-    background: #1e293b;
-    color: #fff;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: nowrap;
-    min-height: 44px;
-  }
-  .grid {
-    margin-top: 56px; /* clear the fixed toolbar */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 16px;
-    gap: 12px;
-  }
-  .label {
-    width: ${w}mm;
-    height: ${h}mm;
-    padding: ${mm(0.05)};
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: ${mm(0.04)};
-    text-align: center;
-    background: #fff;
-    border: 0.3mm solid #ccc;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-    overflow: hidden;
-  }
-
-  /* ── Type styles ───────────────────────────────────────────────────────── */
-  .company {
-    font-size: ${pt(0.10)};
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: #111;
-    line-height: 1.2;
-  }
-  .model {
-    font-weight: 700;
-    color: #111;
-    line-height: 1.2;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .specs {
-    font-size: ${pt(0.09)};
-    font-weight: 500;
-    color: #333;
-    line-height: 1.2;
-  }
-  .colour {
-    font-size: ${pt(0.09)};
-    font-weight: 500;
-    color: #444;
-    line-height: 1.2;
-  }
-  .imei-label {
-    font-size: ${pt(0.09)};
-    font-weight: 700;
-    color: #111;
-    letter-spacing: 0.5px;
-    line-height: 1.2;
-  }
-  .imei {
-    font-size: ${pt(0.17)};
-    font-weight: 700;
-    font-family: 'Courier New', Courier, monospace;
-    color: #000;
-    letter-spacing: 0.5px;
-    line-height: 1.2;
-    word-break: break-all;
-  }
-
-  /* ── Print overrides ───────────────────────────────────────────────────── */
-  @media print {
-    html, body { background: #fff; margin: 0; padding: 0; }
-    .toolbar { display: none !important; }
-    .grid { margin-top: 0; padding: 0; gap: 0; align-items: flex-start; background: #fff; }
-    .label { border: none; box-shadow: none; page-break-after: always; break-after: page; }
-  }
-</style>
-</head>
-<body>
-  <div class="toolbar">
-    <span style="flex:1;font-size:13px;white-space:nowrap">${devices.length} label(s) — ${size.name}</span>
-    <label style="font-size:12px;color:#94a3b8;white-space:nowrap">Size:
-      <select id="sizeSelect" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:none;font-size:12px">
-        ${getLabelSizes().map(s =>
-          `<option value="${s.id}" ${s.id === size.id ? 'selected' : ''}>${s.name}</option>`
-        ).join('')}
-      </select>
-    </label>
-    <button onclick="window.print()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700;white-space:nowrap">🖨 Print</button>
-    <button onclick="window.close()" style="padding:6px 16px;background:#475569;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Close</button>
-  </div>
-  <div class="grid">${labels}</div>
-  <script>
-    document.getElementById('sizeSelect').addEventListener('change', function() {
-      window.__onSizeChange && window.__onSizeChange(this.value)
-    })
-  </script>
-</body>
-</html>`
-}
-
-function printDeviceLabels(devices: LabelDevice[], size?: LabelSize) {
+function printDeviceLabels(devices: LabelDevice[]) {
   if (!devices.length) return
-  const selectedSize = size ?? getSelectedLabelSize()
+  const selectedSize = getSelectedLabelSize()
   if (!selectedSize) {
     toast.error('No label size configured. Go to Settings → Label Printing Sizes and add one.')
     return
   }
   const sizes = getLabelSizes()
+  const template = getDefaultTemplate()
+  const templates = getTemplates()
   const w = window.open('', '_blank', 'width=900,height=700')
   if (!w) { toast.error('Pop-up blocked — please allow pop-ups for this page'); return }
 
-  type PopupWindow = typeof window & {
-    __labelSizes: LabelSize[]
-    __onSizeChange: (id: string) => void
-  }
-  const pw = w as PopupWindow
+  const html = buildPrintHTML(template, devices, selectedSize, sizes, templates, 1)
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
 
-  function renderInPopup(renderSize: LabelSize) {
-    pw.__labelSizes = sizes
-    pw.document.open()
-    pw.document.write(buildLabelHTML(devices, renderSize))
-    pw.document.close()
-    pw.__onSizeChange = (id: string) => {
-      const next = sizes.find(s => s.id === id) ?? renderSize
-      saveSelectedLabelSizeId(id)
-      renderInPopup(next)
-    }
+  // re-render when user changes template/size/copies in popup toolbar
+  ;(window as typeof window & { __labelRerender: unknown }).__labelRerender = (
+    size: LabelSize, tmpl: typeof template, copies: number
+  ) => {
+    const next = buildPrintHTML(tmpl, devices, size, sizes, templates, copies)
+    saveSelectedLabelSizeId(size.id)
+    w.document.open()
+    w.document.write(next)
+    w.document.close()
   }
-
-  renderInPopup(selectedSize)
 }
 
 function deviceToLabel(d: DeviceWithModel): LabelDevice {
@@ -252,6 +57,7 @@ function deviceToLabel(d: DeviceWithModel): LabelDevice {
     ram: d.model?.ram ?? '',
     storage: d.model?.storage ?? '',
     colour: d.model?.colour ?? '',
+    grade: d.grade ?? '',
   }
 }
 
