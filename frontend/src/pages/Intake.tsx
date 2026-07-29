@@ -4,6 +4,9 @@ import toast from 'react-hot-toast'
 import { barcodeDataURL } from '../utils/barcode'
 import { getCompanySettings } from '../hooks/useCompanySettings'
 import {
+  getLabelSizes, getSelectedLabelSize, saveSelectedLabelSizeId, LabelSize,
+} from '../hooks/useLabelSizes'
+import {
   getPurchaseOrders, getSuppliers, createPurchaseOrder,
   receivePurchaseOrder, getPODevices,
 } from '../services/api'
@@ -25,11 +28,17 @@ interface LabelDevice {
   grade: string
 }
 
-function buildLabelHTML(devices: LabelDevice[]): string {
+function buildLabelHTML(devices: LabelDevice[], size: LabelSize): string {
   const co = getCompanySettings()
   const today = new Date().toLocaleDateString('en-NG', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
+  const w = size.widthMm
+  const h = size.heightMm
+
+  // Scale font sizes relative to label area (base: 30×25mm)
+  const scale = Math.min(w / 30, h / 25)
+  const fs = (base: number) => `${(base * scale).toFixed(1)}pt`
 
   const labels = devices.map((d) => {
     const barcodeSrc = barcodeDataURL(d.inventory_number)
@@ -38,58 +47,102 @@ function buildLabelHTML(devices: LabelDevice[]): string {
         <div class="company">${co.name}</div>
         <div class="model-line">${d.brand} ${d.model_name}</div>
         <div class="specs">
-          <span class="spec-item">RAM: ${d.ram || '—'}</span>
-          <span class="spec-item">ROM: ${d.storage || '—'}</span>
-          <span class="spec-item">🎨 ${d.colour || '—'}</span>
-          <span class="spec-item">Grade: <strong>${d.grade}</strong></span>
+          <span class="spec-item">RAM:${d.ram || '—'}</span>
+          <span class="spec-item">ROM:${d.storage || '—'}</span>
+          <span class="spec-item">${d.colour || '—'}</span>
+          <span class="spec-item">Gr:<strong>${d.grade}</strong></span>
         </div>
         <div class="imei-line">IMEI: ${d.imei}</div>
         <img class="barcode" src="${barcodeSrc}" alt="barcode" />
         <div class="inv-line">${d.inventory_number}</div>
-        <div class="date-line">Printed: ${today}</div>
+        <div class="date-line">${today}</div>
       </div>`
   }).join('')
 
   return `<!DOCTYPE html><html><head><title>Barcode Labels</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; background: #fff; }
-    .grid { display: flex; flex-wrap: wrap; gap: 4mm; padding: 4mm; }
-    .label {
-      width: 85mm; border: 1px solid #999; border-radius: 3mm;
-      padding: 4mm; page-break-inside: avoid; background: #fff;
+    @page {
+      size: ${w}mm ${h}mm;
+      margin: 0;
     }
-    .company { font-size: 9pt; color: #555; text-transform: uppercase; letter-spacing: 1px; }
-    .model-line { font-size: 13pt; font-weight: 700; margin: 2mm 0 1mm; color: #111; }
-    .specs { display: flex; gap: 4mm; font-size: 9pt; color: #333; margin-bottom: 2mm; flex-wrap: wrap; }
-    .spec-item { background: #f0f0f0; padding: 1mm 2mm; border-radius: 2mm; }
-    .imei-line { font-size: 8pt; color: #444; margin-bottom: 2mm; font-family: monospace; }
-    .barcode { width: 100%; height: auto; display: block; margin-bottom: 0; }
-    .inv-line { font-size: 9pt; font-family: monospace; font-weight: 700; text-align: center; letter-spacing: 2px; margin-bottom: 2mm; color: #111; }
-    .date-line { font-size: 7pt; color: #999; text-align: right; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .grid { display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
+    .label {
+      width: ${w}mm; height: ${h}mm;
+      border: 0.3mm solid #999;
+      padding: 1mm 1.5mm;
+      page-break-inside: avoid;
+      page-break-after: always;
+      background: #fff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .company { font-size: ${fs(5.5)}; color: #555; text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.1; }
+    .model-line { font-size: ${fs(7)}; font-weight: 700; color: #111; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .specs { display: flex; gap: 1mm; font-size: ${fs(5)}; color: #333; flex-wrap: wrap; line-height: 1.1; }
+    .spec-item { background: #f0f0f0; padding: 0 1mm; border-radius: 0.5mm; white-space: nowrap; }
+    .imei-line { font-size: ${fs(5)}; color: #444; font-family: monospace; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .barcode { width: 100%; height: auto; display: block; flex-shrink: 0; }
+    .inv-line { font-size: ${fs(5.5)}; font-family: monospace; font-weight: 700; text-align: center; letter-spacing: 1px; color: #111; line-height: 1.1; }
+    .date-line { font-size: ${fs(4.5)}; color: #999; text-align: right; line-height: 1.1; }
     @media print {
       body { margin: 0; }
-      .grid { gap: 2mm; padding: 2mm; }
-      .label { border-color: #ccc; }
-      .no-print { display: none; }
+      .grid { gap: 0; padding: 0; }
+      .label { border-color: transparent; }
+      .no-print { display: none !important; }
     }
   </style></head>
   <body>
-    <div class="no-print" style="padding:8px;background:#1e293b;color:#fff;display:flex;gap:8px;align-items:center">
-      <span style="flex:1">${devices.length} label(s) ready</span>
+    <div class="no-print" id="toolbar" style="padding:8px;background:#1e293b;color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="flex:1;font-size:13px">${devices.length} label(s) — ${size.name}</span>
+      <label style="font-size:12px;color:#94a3b8">Size:
+        <select id="sizeSelect" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:none;font-size:12px">
+          ${getLabelSizes().map(s =>
+            `<option value="${s.id}" ${s.id === size.id ? 'selected' : ''}>${s.name}</option>`
+          ).join('')}
+        </select>
+      </label>
       <button onclick="window.print()" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700">🖨 Print</button>
       <button onclick="window.close()" style="padding:6px 16px;background:#475569;color:#fff;border:none;border-radius:4px;cursor:pointer">Close</button>
     </div>
     <div class="grid">${labels}</div>
+    <script>
+      document.getElementById('sizeSelect')?.addEventListener('change', function() {
+        window.__onSizeChange && window.__onSizeChange(this.value)
+      })
+    </script>
   </body></html>`
 }
 
-function printDeviceLabels(devices: LabelDevice[]) {
+function printDeviceLabels(devices: LabelDevice[], size?: LabelSize) {
   if (!devices.length) return
+  const selectedSize = size ?? getSelectedLabelSize()
+  const sizes = getLabelSizes()
   const w = window.open('', '_blank', 'width=900,height=700')
   if (!w) { toast.error('Pop-up blocked — please allow pop-ups for this page'); return }
-  w.document.write(buildLabelHTML(devices))
-  w.document.close()
+
+  type PopupWindow = typeof window & {
+    __labelSizes: LabelSize[]
+    __onSizeChange: (id: string) => void
+  }
+  const pw = w as PopupWindow
+
+  function renderInPopup(renderSize: LabelSize) {
+    pw.__labelSizes = sizes
+    pw.document.open()
+    pw.document.write(buildLabelHTML(devices, renderSize))
+    pw.document.close()
+    pw.__onSizeChange = (id: string) => {
+      const next = sizes.find(s => s.id === id) ?? renderSize
+      saveSelectedLabelSizeId(id)
+      renderInPopup(next)
+    }
+  }
+
+  renderInPopup(selectedSize)
 }
 
 function deviceToLabel(d: DeviceWithModel): LabelDevice {
