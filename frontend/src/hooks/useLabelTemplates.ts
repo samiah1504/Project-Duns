@@ -17,25 +17,23 @@ export type FieldType =
   | 'date_received'
   | 'imei_text'
   | 'serial_number'
-  | 'qr_code'
 
 export interface LabelField {
   type: FieldType
   enabled: boolean
-  label?: string          // override display label
-  fontSize: number        // pt
+  fontSize: number        // pt — 0 means auto-calculate from available space
   bold: boolean
   align: 'left' | 'center' | 'right'
-  paddingTop: number      // mm
-  paddingBottom: number   // mm
-  // barcode-specific
-  barcodeHeight?: number  // mm
-  barcodeModuleWidth?: number // multiplier
 }
 
 export interface LabelTemplate {
   id: string
   name: string
+  // Margins in mm — default 2/2/1.5/1.5
+  marginTop: number
+  marginBottom: number
+  marginLeft: number
+  marginRight: number
   fields: LabelField[]
 }
 
@@ -55,72 +53,74 @@ export const FIELD_LABELS: Record<FieldType, string> = {
   date_received: 'Date Received',
   imei_text: 'IMEI (text)',
   serial_number: 'Serial Number',
-  qr_code: 'QR Code',
 }
 
 const ALL_FIELD_TYPES: FieldType[] = [
   'company_name', 'phone_model', 'brand', 'barcode', 'grade',
   'ram', 'rom', 'colour', 'condition', 'selling_price',
-  'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number', 'qr_code',
+  'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number',
 ]
 
+export const isBarcode = (f: LabelField) => f.type === 'barcode'
+
 function defaultField(type: FieldType, enabled: boolean): LabelField {
-  const isBarcode = type === 'barcode' || type === 'qr_code'
   return {
     type,
     enabled,
-    fontSize: type === 'company_name' ? 10 : type === 'phone_model' ? 9 : 8,
+    fontSize: 0,   // 0 = auto
     bold: type === 'company_name' || type === 'phone_model',
     align: 'center',
-    paddingTop: 0.5,
-    paddingBottom: 0.5,
-    ...(isBarcode ? { barcodeHeight: 12, barcodeModuleWidth: 2 } : {}),
   }
 }
 
+const DEFAULT_MARGINS = { marginTop: 1.5, marginBottom: 1.5, marginLeft: 2, marginRight: 2 }
+
 function buildDefaultTemplate(): LabelTemplate {
-  const enabledSet = new Set<FieldType>(['company_name', 'phone_model', 'barcode', 'grade'])
+  // Field order: company → phone model → grade → barcode (spec: §6)
+  const enabledSet = new Set<FieldType>(['company_name', 'phone_model', 'grade', 'barcode'])
+  // Put barcode last in the fields array
+  const order: FieldType[] = ['company_name', 'phone_model', 'grade', 'barcode',
+    'brand', 'ram', 'rom', 'colour', 'condition', 'selling_price',
+    'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number']
   return {
     id: 'default',
     name: 'Default Phone Label',
+    ...DEFAULT_MARGINS,
+    fields: order.map(t => defaultField(t, enabledSet.has(t))),
+  }
+}
+
+function buildTemplate(id: string, name: string, enabled: FieldType[], margins?: Partial<typeof DEFAULT_MARGINS>): LabelTemplate {
+  const enabledSet = new Set(enabled)
+  return {
+    id,
+    name,
+    ...DEFAULT_MARGINS,
+    ...margins,
     fields: ALL_FIELD_TYPES.map(t => defaultField(t, enabledSet.has(t))),
   }
 }
 
 const PRESET_TEMPLATES: LabelTemplate[] = [
   buildDefaultTemplate(),
-  {
-    id: 'barcode-only',
-    name: 'Barcode Only',
-    fields: ALL_FIELD_TYPES.map(t => ({ ...defaultField(t, false), ...(t === 'barcode' ? { enabled: true } : {}) })),
-  },
-  {
-    id: 'showroom',
-    name: 'Showroom Label',
-    fields: ALL_FIELD_TYPES.map(t => ({
-      ...defaultField(t, ['company_name', 'phone_model', 'grade', 'colour', 'selling_price'].includes(t)),
-    })),
-  },
-  {
-    id: 'warehouse',
-    name: 'Warehouse Label',
-    fields: ALL_FIELD_TYPES.map(t => ({
-      ...defaultField(t, ['barcode', 'phone_model', 'inventory_id', 'date_received'].includes(t)),
-    })),
-  },
-  {
-    id: 'accessory',
-    name: 'Accessory Label',
-    fields: ALL_FIELD_TYPES.map(t => ({
-      ...defaultField(t, ['company_name', 'sku', 'selling_price', 'barcode'].includes(t)),
-    })),
-  },
+  buildTemplate('barcode-only', 'Barcode Only', ['barcode']),
+  buildTemplate('showroom', 'Showroom Label', ['company_name', 'phone_model', 'grade', 'colour', 'selling_price']),
+  buildTemplate('warehouse', 'Warehouse Label', ['barcode', 'phone_model', 'inventory_id', 'date_received']),
+  buildTemplate('accessory', 'Accessory Label', ['company_name', 'sku', 'selling_price', 'barcode']),
 ]
 
 export function getTemplates(): LabelTemplate[] {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const saved: LabelTemplate[] = JSON.parse(raw)
+      // Back-fill margin fields for templates saved before this version
+      return saved.map(t => ({
+        ...DEFAULT_MARGINS,
+        ...t,
+        fields: t.fields.map(f => ({ ...f, fontSize: f.fontSize ?? 0 })),
+      }))
+    }
   } catch { /* ignore */ }
   const templates = PRESET_TEMPLATES.map(t => ({ ...t, fields: t.fields.map(f => ({ ...f })) }))
   saveTemplates(templates)
@@ -148,6 +148,7 @@ export function getDefaultTemplate(): LabelTemplate {
 export function createTemplate(name: string, copyFrom?: LabelTemplate): LabelTemplate {
   const base = copyFrom ?? buildDefaultTemplate()
   const tmpl: LabelTemplate = {
+    ...base,
     id: `tmpl-${Date.now()}`,
     name,
     fields: base.fields.map(f => ({ ...f })),
@@ -156,13 +157,6 @@ export function createTemplate(name: string, copyFrom?: LabelTemplate): LabelTem
   templates.push(tmpl)
   saveTemplates(templates)
   return tmpl
-}
-
-export function updateTemplate(tmpl: LabelTemplate): void {
-  const templates = getTemplates()
-  const idx = templates.findIndex(t => t.id === tmpl.id)
-  if (idx >= 0) templates[idx] = tmpl
-  saveTemplates(templates)
 }
 
 export function deleteTemplate(id: string): void {
