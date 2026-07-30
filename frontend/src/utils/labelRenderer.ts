@@ -248,15 +248,22 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
   border-radius: 4px; padding: 3px 8px; white-space: nowrap;
 }
 .wrap { padding-top: 56px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-bottom: 16px; }
+#__printErr {
+  display: none; position: fixed; top: 50px; left: 0; right: 0; z-index: 99999;
+  background: #fee2e2; color: #991b1b; border-bottom: 2px solid #f87171;
+  padding: 10px 20px; font-size: 13px; text-align: center;
+}
 @media print {
   .toolbar { display: none !important; }
+  #__printErr { display: none !important; }
   .wrap { padding: 0; gap: 0; background: #fff; }
 }
 </style>
 </head><body>
+<div id="__printErr"></div>
 <div class="toolbar">
   <span style="font-weight:700;color:#38bdf8;margin-right:4px;">Labels</span>
-  <span class="print-tip">⚠ In print dialog: Margins=None, uncheck Headers/Footers</span>
+  <span class="print-tip">⚠ In print dialog: Margins=None, Scale=100%, uncheck Headers/Footers</span>
   <label style="font-size:11px;color:#94a3b8;">Template:</label>
   <select id="tmplSel">${tmplOptions}</select>
   <label style="font-size:11px;color:#94a3b8;">Size:</label>
@@ -265,19 +272,77 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
   <input id="copiesIn" type="number" value="${copies}" min="1" max="50" style="width:52px;">
   <span style="font-size:10px;color:#64748b;">${w}×${h}mm</span>
   <div class="spacer"></div>
-  <button style="background:#22c55e;color:#fff;" onclick="window.print()">🖨 Print</button>
+  <button id="__printBtn" style="background:#22c55e;color:#fff;" onclick="doPrint()">🖨 Print</button>
   <button style="background:#ef4444;color:#fff;" onclick="window.close()">✕ Close</button>
 </div>
 <div class="wrap">${labelsHtml}</div>
 <script>
-var _sizes=${JSON.stringify(allSizes)},_tmpls=${JSON.stringify(allTemplates)};
-function rerender(){
-  var sz=_sizes.find(function(s){return s.id===document.getElementById('sizeSel').value;})||_sizes[0];
-  var tm=_tmpls.find(function(t){return t.id===document.getElementById('tmplSel').value;})||_tmpls[0];
-  var cp=parseInt(document.getElementById('copiesIn').value)||1;
-  if(window.opener&&window.opener.__labelRerender)window.opener.__labelRerender(sz,tm,cp);
-}
-['sizeSel','tmplSel','copiesIn'].forEach(function(id){document.getElementById(id).addEventListener('change',rerender);});
+(function() {
+  var _printed = false;
+
+  function showError(msg) {
+    var el = document.getElementById('__printErr');
+    if (el) { el.textContent = '⚠ Print error: ' + msg; el.style.display = 'block'; }
+  }
+
+  /* Exposed globally so the toolbar button can call it too */
+  window.doPrint = function() {
+    document.getElementById('__printErr').style.display = 'none';
+    try {
+      window.focus(); /* ensure window has focus — critical for WebView2 */
+      window.print();
+    } catch (err) {
+      showError(err && err.message ? err.message : String(err));
+    }
+  };
+
+  /* Close preview automatically when print dialog is dismissed (print or cancel) */
+  window.addEventListener('afterprint', function() {
+    window.close();
+  });
+
+  /* Auto-trigger print once the page is fully painted.
+     Two requestAnimationFrame calls guarantee at least one layout+paint cycle
+     has completed — no arbitrary timeouts needed. */
+  function autoPrint() {
+    if (_printed) return;
+    _printed = true;
+    if (typeof document.fonts !== 'undefined' && document.fonts.ready) {
+      document.fonts.ready.then(function() {
+        requestAnimationFrame(function() {
+          requestAnimationFrame(window.doPrint);
+        });
+      }).catch(function() {
+        requestAnimationFrame(function() {
+          requestAnimationFrame(window.doPrint);
+        });
+      });
+    } else {
+      requestAnimationFrame(function() {
+        requestAnimationFrame(window.doPrint);
+      });
+    }
+  }
+
+  if (document.readyState === 'complete') {
+    autoPrint();
+  } else {
+    window.addEventListener('load', autoPrint);
+  }
+
+  /* Template / size / copies re-render for the toolbar selectors */
+  var _sizes=${JSON.stringify(allSizes)},_tmpls=${JSON.stringify(allTemplates)};
+  function rerender(){
+    var sz=_sizes.find(function(s){return s.id===document.getElementById('sizeSel').value;})||_sizes[0];
+    var tm=_tmpls.find(function(t){return t.id===document.getElementById('tmplSel').value;})||_tmpls[0];
+    var cp=parseInt(document.getElementById('copiesIn').value)||1;
+    if(window.opener&&window.opener.__labelRerender){
+      _printed = false; /* allow auto-print after rerender */
+      window.opener.__labelRerender(sz,tm,cp);
+    }
+  }
+  ['sizeSel','tmplSel','copiesIn'].forEach(function(id){document.getElementById(id).addEventListener('change',rerender);});
+})();
 </script>
 </body></html>`
 }
@@ -327,6 +392,20 @@ html, body { font-family: Arial, sans-serif; }
   Width should be <strong>${widthMm} mm</strong>, height should be <strong>${heightMm} mm</strong>.<br>
   <em>In the print dialog: set Margins to <strong>None</strong> and uncheck Headers &amp; Footers.</em>
 </div>
-<script>window.print()</script>
+<script>
+(function() {
+  function doPrint() {
+    try { window.focus(); window.print(); } catch(e) {}
+  }
+  window.addEventListener('afterprint', function() { window.close(); });
+  if (document.readyState === 'complete') {
+    requestAnimationFrame(function() { requestAnimationFrame(doPrint); });
+  } else {
+    window.addEventListener('load', function() {
+      requestAnimationFrame(function() { requestAnimationFrame(doPrint); });
+    });
+  }
+})();
+</script>
 </body></html>`
 }

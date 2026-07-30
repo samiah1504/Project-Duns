@@ -39,6 +39,7 @@ async function printDeviceLabels(devices: LabelDevice[]) {
   w.document.open()
   w.document.write(html)
   w.document.close()
+  w.focus()
 
   ;(window as typeof window & { __labelRerender: unknown }).__labelRerender = (
     size: LabelSize, tmpl: typeof template, copies: number
@@ -48,6 +49,7 @@ async function printDeviceLabels(devices: LabelDevice[]) {
     w.document.open()
     w.document.write(next)
     w.document.close()
+    w.focus()
   }
 }
 

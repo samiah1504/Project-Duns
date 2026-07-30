@@ -988,15 +988,23 @@ export default function LabelDesigner() {
   const handleTestPrint = () => {
     if (!selectedSize || !workingTemplate) { toast.error('Select a label size first'); return }
     const html = buildPrintHTML(workingTemplate, [SAMPLE_DEVICE], selectedSize, sizes, apiTemplates.map(t => t.data), 1)
-    const w = window.open('', '_blank', 'width=900,height=600')
-    if (w) w.document.write(html)
+    const w = window.open('', '_blank', 'width=900,height=700')
+    if (!w) { toast.error('Pop-up was blocked — allow pop-ups for this page and try again'); return }
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    w.focus()
   }
 
   const handleCalibration = () => {
     if (!selectedSize) { toast.error('Select a label size first'); return }
     const html = buildCalibrationHTML(selectedSize.widthMm, selectedSize.heightMm)
     const w = window.open('', '_blank', 'width=700,height=500')
-    if (w) w.document.write(html)
+    if (!w) { toast.error('Pop-up was blocked — allow pop-ups for this page and try again'); return }
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    w.focus()
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
