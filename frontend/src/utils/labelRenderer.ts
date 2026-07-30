@@ -253,16 +253,24 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
   padding: 10px 20px; font-size: 13px; text-align: center;
 }
 @media print {
-  .toolbar { display: none !important; }
-  #__printErr { display: none !important; }
-  .wrap { padding: 0; gap: 0; background: #fff; }
+  .toolbar, #__printErr { display: none !important; }
+  html, body {
+    margin: 0 !important; padding: 0 !important;
+    background: #fff !important; width: ${w}mm !important;
+  }
+  /* Block layout so each label starts at top-left of its page, not centred */
+  .wrap {
+    display: block !important;
+    margin: 0 !important; padding: 0 !important; gap: 0 !important;
+    background: #fff !important; width: ${w}mm !important;
+  }
 }
 </style>
 </head><body>
 <div id="__printErr"></div>
 <div class="toolbar">
   <span style="font-weight:700;color:#38bdf8;margin-right:4px;">Labels</span>
-  <span class="print-tip">⚠ In print dialog: Margins=None, Scale=100%, uncheck Headers/Footers</span>
+  <span class="print-tip">⚠ Print dialog: Margins=None · Scale=100% (not "Fit") · Paper=${w}×${h}mm · No headers/footers</span>
   <label style="font-size:11px;color:#94a3b8;">Template:</label>
   <select id="tmplSel">${tmplOptions}</select>
   <label style="font-size:11px;color:#94a3b8;">Size:</label>
