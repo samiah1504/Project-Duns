@@ -139,6 +139,19 @@ function renderFieldHTML(
 
 function labelBodyHTML(template: LabelTemplate, device: DeviceForLabel): string {
   const co = getCompanySettings()
+  return buildLabelElementsHTML(template, device, co)
+}
+
+/**
+ * Returns the HTML for all enabled fields in the template using the exact same
+ * rendering pipeline as the print output.  Import this in the designer canvas
+ * so designer and print use a single shared renderer.
+ */
+export function buildLabelElementsHTML(
+  template: LabelTemplate,
+  device: DeviceForLabel,
+  co: { name: string } = { name: 'COMPANY' },
+): string {
   return [...template.fields]
     .filter(f => f.enabled)
     .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))

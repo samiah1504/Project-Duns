@@ -27,8 +27,7 @@ import {
   fetchTemplates, saveNewTemplate, overwriteTemplate, removeTemplate, markDefault,
   APILabelTemplate,
 } from '../hooks/useLabelTemplateAPI'
-import { buildPrintHTML, buildCalibrationHTML, fieldValue, SAMPLE_DEVICE } from '../utils/labelRenderer'
-import { barcodeSVG } from '../utils/barcode'
+import { buildPrintHTML, buildCalibrationHTML, buildLabelElementsHTML, SAMPLE_DEVICE } from '../utils/labelRenderer'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -108,55 +107,19 @@ function VRuler({ totalMm, scale }: { totalMm: number; scale: number }) {
   )
 }
 
-// ─── Canvas element ───────────────────────────────────────────────────────────
+// ─── Field interaction overlay (no visual content — rendering handled by shared renderer) ──
 
 const CO_SAMPLE = { name: 'TARDMART' }
 
-function getDisplayVal(type: FieldType): string {
-  return fieldValue(type, SAMPLE_DEVICE, CO_SAMPLE) || FIELD_LABELS[type]
-}
-
-interface CanvasElemProps {
+interface FieldOverlayProps {
   field: LabelField; scale: number; selected: boolean
   onSelect: (e: React.MouseEvent) => void
   onDragStart: (e: React.MouseEvent, type: FieldType) => void
   onResizeStart: (e: React.MouseEvent, type: FieldType, handle: Handle) => void
 }
 
-function CanvasElem({ field, scale, selected, onSelect, onDragStart, onResizeStart }: CanvasElemProps) {
+function FieldOverlay({ field, scale, selected, onSelect, onDragStart, onResizeStart }: FieldOverlayProps) {
   const x = field.x ?? 0, y = field.y ?? 0, w = field.w ?? 30, h = field.h ?? 5
-
-  const content = () => {
-    if (isBarcode(field)) {
-      const bw = w * 0.92, bh = h * 0.88
-      const svg = barcodeSVG('352800112345678', { height: bh * scale * 0.88, scale: Math.max(1, Math.round(field.barcodeModuleWidth ?? 2)) })
-      const styledSvg = svg.replace('<svg ', `<svg style="width:${bw * scale}px;height:${bh * scale}px;display:block;" `)
-      return (
-        <div style={{ display: 'flex', alignItems: 'center', height: '100%',
-          justifyContent: field.align === 'left' ? 'flex-start' : field.align === 'right' ? 'flex-end' : 'center' }}
-          dangerouslySetInnerHTML={{ __html: styledSvg }} />
-      )
-    }
-    const fsPt = field.fontSize > 0 ? field.fontSize : Math.max(5, h * 0.60 * 2.835)
-    const fsPx = fsPt * (96 / 72)
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', height: '100%', padding: '0 2px', overflow: 'hidden',
-        justifyContent: field.align === 'left' ? 'flex-start' : field.align === 'right' ? 'flex-end' : 'center',
-      }}>
-        <span style={{
-          fontSize: fsPx, fontWeight: field.bold ? 700 : 400,
-          fontStyle: field.italic ? 'italic' : 'normal',
-          color: field.color || '#000', lineHeight: field.lineHeight || 1.1,
-          letterSpacing: field.letterSpacing || 0,
-          textAlign: field.align, wordBreak: 'break-word', maxWidth: '100%',
-        }}>
-          {getDisplayVal(field.type)}
-        </span>
-      </div>
-    )
-  }
-
   return (
     <div
       onMouseDown={e => { onSelect(e); onDragStart(e, field.type) }}
@@ -164,13 +127,13 @@ function CanvasElem({ field, scale, selected, onSelect, onDragStart, onResizeSta
         position: 'absolute',
         left: pxOf(x, scale), top: pxOf(y, scale),
         width: pxOf(w, scale), height: pxOf(h, scale),
-        zIndex: (field.zIndex ?? 0) + (selected ? 1000 : 0),
-        cursor: 'move', boxSizing: 'border-box', overflow: 'hidden',
-        border: selected ? '1.5px solid #3b82f6' : '1px dashed transparent',
+        zIndex: (field.zIndex ?? 0) + 10 + (selected ? 1000 : 0),
+        cursor: 'move', boxSizing: 'border-box',
+        background: 'transparent',
+        border: selected ? '1.5px solid #3b82f6' : '1px dashed rgba(0,0,0,0)',
         userSelect: 'none',
       }}
     >
-      {content()}
       {selected && (Object.keys(HANDLE_POS) as Handle[]).map(h => (
         <div key={h} onMouseDown={e => { e.stopPropagation(); onResizeStart(e, field.type, h) }}
           style={{
@@ -315,6 +278,19 @@ function Canvas({ template, size, scale, selectedField, onSelectField, onCommitF
   const cW = pxOf(W, scale), cH = pxOf(H, scale)
   const safW = Math.max(0, W - ml - mr), safH = Math.max(0, H - mt - mb)
 
+  // Scale factor: CSS mm → canvas px
+  // The shared renderer outputs mm-absolute HTML; this transform scales it to fit the canvas.
+  const mmToPx = scale / PX_PER_MM
+
+  // Build a live snapshot of the template with any in-progress drag/resize applied
+  const liveTemplate = Object.keys(livePos).length === 0 ? template : {
+    ...template,
+    fields: template.fields.map(f => livePos[f.type] ? { ...f, ...livePos[f.type] } : f),
+  }
+
+  // Render label body using the exact same shared renderer as the print pipeline
+  const labelHTML = buildLabelElementsHTML(liveTemplate, SAMPLE_DEVICE, CO_SAMPLE)
+
   return (
     <div
       onClick={() => onSelectField(null)}
@@ -322,16 +298,29 @@ function Canvas({ template, size, scale, selectedField, onSelectField, onCommitF
         position: 'relative', width: cW, height: cH, flexShrink: 0,
         background: '#fff',
         boxShadow: '0 0 0 1px #475569, 0 4px 20px rgba(0,0,0,0.22)',
-        cursor: 'default', overflow: 'visible',
+        cursor: 'default', overflow: 'hidden',
       }}
     >
+      {/* ── WYSIWYG rendering layer — identical pipeline to print output ── */}
+      <div
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          width: `${W}mm`, height: `${H}mm`,
+          transformOrigin: '0 0',
+          transform: `scale(${mmToPx})`,
+          pointerEvents: 'none',
+          overflow: 'hidden',
+        }}
+        dangerouslySetInnerHTML={{ __html: labelHTML }}
+      />
+
       {/* Safe-area border — dashed, clearly visible */}
       <div style={{
         position: 'absolute',
         left: pxOf(ml, scale), top: pxOf(mt, scale),
         width: pxOf(safW, scale), height: pxOf(safH, scale),
         border: '1px dashed #93c5fd',
-        pointerEvents: 'none', zIndex: 0,
+        pointerEvents: 'none', zIndex: 5,
       }} />
 
       {/* Corner marks at safe-area corners */}
@@ -351,7 +340,7 @@ function Canvas({ template, size, scale, selectedField, onSelectField, onCommitF
           borderColor: '#3b82f6',
           borderStyle: 'solid',
           borderWidth: i === 0 ? '1.5px 0 0 1.5px' : i === 1 ? '1.5px 1.5px 0 0' : i === 2 ? '0 0 1.5px 1.5px' : '0 1.5px 1.5px 0',
-          pointerEvents: 'none', zIndex: 1,
+          pointerEvents: 'none', zIndex: 6,
         }} />
       ))}
 
@@ -371,24 +360,21 @@ function Canvas({ template, size, scale, selectedField, onSelectField, onCommitF
         )
       })}
 
-      {/* Field elements */}
-      {[...template.fields]
+      {/* ── Transparent interaction overlays — drag/resize, no visual content ── */}
+      {[...liveTemplate.fields]
         .filter(f => f.enabled)
         .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
-        .map(f => {
-          const live = livePos[f.type]
-          return (
-            <CanvasElem
-              key={f.type}
-              field={live ? { ...f, ...live } : f}
-              scale={scale}
-              selected={selectedField === f.type}
-              onSelect={e => { e.stopPropagation(); onSelectField(f.type) }}
-              onDragStart={onDragStart}
-              onResizeStart={onResizeStart}
-            />
-          )
-        })}
+        .map(f => (
+          <FieldOverlay
+            key={f.type}
+            field={f}
+            scale={scale}
+            selected={selectedField === f.type}
+            onSelect={e => { e.stopPropagation(); onSelectField(f.type) }}
+            onDragStart={onDragStart}
+            onResizeStart={onResizeStart}
+          />
+        ))}
     </div>
   )
 }
