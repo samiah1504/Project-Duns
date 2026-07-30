@@ -2,34 +2,36 @@ const KEY = 'tardmart_label_templates'
 const DEFAULT_KEY = 'tardmart_default_template'
 
 export type FieldType =
-  | 'company_name'
-  | 'phone_model'
-  | 'brand'
-  | 'barcode'
-  | 'grade'
-  | 'ram'
-  | 'rom'
-  | 'colour'
-  | 'condition'
-  | 'selling_price'
-  | 'sku'
-  | 'inventory_id'
-  | 'date_received'
-  | 'imei_text'
-  | 'serial_number'
+  | 'company_name' | 'phone_model' | 'brand' | 'barcode' | 'grade'
+  | 'ram' | 'rom' | 'colour' | 'condition' | 'selling_price'
+  | 'sku' | 'inventory_id' | 'date_received' | 'imei_text' | 'serial_number'
 
 export interface LabelField {
   type: FieldType
   enabled: boolean
-  fontSize: number        // pt — 0 means auto-calculate from available space
+  // Absolute position on the label (mm from top-left corner)
+  // Optional so old templates survive; designer fills them in via autoPlaceFields
+  x?: number
+  y?: number
+  w?: number
+  h?: number
+  zIndex?: number
+  // Text appearance
+  fontSize: number          // pt — 0 means auto-derive from h
   bold: boolean
+  italic: boolean
   align: 'left' | 'center' | 'right'
+  color: string             // hex
+  lineHeight: number        // multiplier, 1.0–2.0
+  letterSpacing: number     // pt
+  // Barcode
+  barcodeShowText: boolean
+  barcodeModuleWidth: number // 1–4 bar-thickness scale
 }
 
 export interface LabelTemplate {
   id: string
   name: string
-  // Margins in mm — default 2/2/1.5/1.5
   marginTop: number
   marginBottom: number
   marginLeft: number
@@ -55,70 +57,122 @@ export const FIELD_LABELS: Record<FieldType, string> = {
   serial_number: 'Serial Number',
 }
 
+export const isBarcode = (f: LabelField) => f.type === 'barcode'
+
 const ALL_FIELD_TYPES: FieldType[] = [
   'company_name', 'phone_model', 'brand', 'barcode', 'grade',
   'ram', 'rom', 'colour', 'condition', 'selling_price',
   'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number',
 ]
 
-export const isBarcode = (f: LabelField) => f.type === 'barcode'
-
-function defaultField(type: FieldType, enabled: boolean): LabelField {
-  return {
-    type,
-    enabled,
-    fontSize: 0,   // 0 = auto
-    bold: type === 'company_name' || type === 'phone_model',
-    align: 'center',
-  }
-}
-
 const DEFAULT_MARGINS = { marginTop: 1.5, marginBottom: 1.5, marginLeft: 2, marginRight: 2 }
 
-function buildDefaultTemplate(): LabelTemplate {
-  // Field order: company → phone model → grade → barcode (spec: §6)
-  const enabledSet = new Set<FieldType>(['company_name', 'phone_model', 'grade', 'barcode'])
-  // Put barcode last in the fields array
-  const order: FieldType[] = ['company_name', 'phone_model', 'grade', 'barcode',
-    'brand', 'ram', 'rom', 'colour', 'condition', 'selling_price',
-    'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number']
+function baseField(type: FieldType, enabled: boolean): LabelField {
   return {
-    id: 'default',
-    name: 'Default Phone Label',
-    ...DEFAULT_MARGINS,
-    fields: order.map(t => defaultField(t, enabledSet.has(t))),
+    type, enabled,
+    // position filled in by autoPlaceFields()
+    x: undefined, y: undefined, w: undefined, h: undefined, zIndex: undefined,
+    fontSize: 0,
+    bold: type === 'company_name' || type === 'phone_model',
+    italic: false,
+    align: 'center',
+    color: '#000000',
+    lineHeight: 1.1,
+    letterSpacing: 0,
+    barcodeShowText: false,
+    barcodeModuleWidth: 2,
   }
 }
 
-function buildTemplate(id: string, name: string, enabled: FieldType[], margins?: Partial<typeof DEFAULT_MARGINS>): LabelTemplate {
-  const enabledSet = new Set(enabled)
+// ─── Auto-placement ───────────────────────────────────────────────────────────
+
+const BARCODE_WEIGHT = 3  // barcode row height = 3× text row
+
+/** Fill in x/y/w/h/zIndex for any field missing position data. */
+export function autoPlaceFields(
+  template: LabelTemplate,
+  labelW: number,
+  labelH: number,
+): LabelTemplate {
+  const { marginLeft: ml, marginRight: mr, marginTop: mt, marginBottom: mb } = template
+  const uw = Math.max(2, labelW - ml - mr)
+  const uh = Math.max(2, labelH - mt - mb)
+
+  const enabled = template.fields.filter(f => f.enabled)
+  const totalWeight = enabled.reduce((s, f) => s + (isBarcode(f) ? BARCODE_WEIGHT : 1), 0) || 1
+  const unitH = uh / totalWeight
+
+  let cy = mt
+  const placed = template.fields.map((f, i) => {
+    if (f.x !== undefined && f.y !== undefined) return f  // already placed
+    const fh = isBarcode(f) ? unitH * BARCODE_WEIGHT : unitH
+    const out: LabelField = {
+      ...f,
+      x: ml,
+      y: f.enabled ? cy : mt + uh * 0.1 * i,  // stack disabled off to side
+      w: uw,
+      h: fh,
+      zIndex: i,
+    }
+    if (f.enabled) cy += fh
+    return out
+  })
+
+  return { ...template, fields: placed }
+}
+
+export function needsPlacement(template: LabelTemplate): boolean {
+  return template.fields.some(f => f.enabled && f.x === undefined)
+}
+
+// ─── Preset templates ─────────────────────────────────────────────────────────
+
+function buildTemplate(
+  id: string,
+  name: string,
+  enabledSet: FieldType[],
+  order?: FieldType[],
+): LabelTemplate {
+  const orderedTypes = order ?? ALL_FIELD_TYPES
+  const enabled = new Set(enabledSet)
   return {
-    id,
-    name,
+    id, name,
     ...DEFAULT_MARGINS,
-    ...margins,
-    fields: ALL_FIELD_TYPES.map(t => defaultField(t, enabledSet.has(t))),
+    fields: orderedTypes.map(t => baseField(t, enabled.has(t))),
   }
 }
 
 const PRESET_TEMPLATES: LabelTemplate[] = [
-  buildDefaultTemplate(),
+  buildTemplate('default', 'Default Phone Label',
+    ['company_name', 'phone_model', 'grade', 'barcode'],
+    ['company_name', 'phone_model', 'grade', 'barcode',
+      'brand', 'ram', 'rom', 'colour', 'condition', 'selling_price',
+      'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number'],
+  ),
   buildTemplate('barcode-only', 'Barcode Only', ['barcode']),
   buildTemplate('showroom', 'Showroom Label', ['company_name', 'phone_model', 'grade', 'colour', 'selling_price']),
   buildTemplate('warehouse', 'Warehouse Label', ['barcode', 'phone_model', 'inventory_id', 'date_received']),
   buildTemplate('accessory', 'Accessory Label', ['company_name', 'sku', 'selling_price', 'barcode']),
 ]
 
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
+
+function migrateField(f: Partial<LabelField> & { type: FieldType; enabled: boolean }): LabelField {
+  return {
+    ...baseField(f.type, f.enabled),
+    ...f,
+  } as LabelField
+}
+
 export function getTemplates(): LabelTemplate[] {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
       const saved: LabelTemplate[] = JSON.parse(raw)
-      // Back-fill margin fields for templates saved before this version
       return saved.map(t => ({
         ...DEFAULT_MARGINS,
         ...t,
-        fields: t.fields.map(f => ({ ...f, fontSize: f.fontSize ?? 0 })),
+        fields: t.fields.map(migrateField),
       }))
     }
   } catch { /* ignore */ }
@@ -146,12 +200,12 @@ export function getDefaultTemplate(): LabelTemplate {
 }
 
 export function createTemplate(name: string, copyFrom?: LabelTemplate): LabelTemplate {
-  const base = copyFrom ?? buildDefaultTemplate()
+  const base = copyFrom ?? PRESET_TEMPLATES[0]
   const tmpl: LabelTemplate = {
     ...base,
     id: `tmpl-${Date.now()}`,
     name,
-    fields: base.fields.map(f => ({ ...f })),
+    fields: base.fields.map(f => ({ ...f, x: undefined, y: undefined, w: undefined, h: undefined, zIndex: undefined })),
   }
   const templates = getTemplates()
   templates.push(tmpl)
