@@ -211,7 +211,6 @@ export function buildPrintHTML(
 ): string {
   const t = resolveTemplate(template, size)
   const w = size.widthMm, h = size.heightMm
-  const orientation = w >= h ? 'landscape' : 'portrait'
 
   const rows: DeviceForLabel[] = []
   for (const d of devices) for (let i = 0; i < copies; i++) rows.push(d)
@@ -229,7 +228,7 @@ export function buildPrintHTML(
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print Labels</title>
 <style>
-@page { size: ${w}mm ${h}mm ${orientation}; margin: 0; }
+@page { margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
 .toolbar {
@@ -271,7 +270,7 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
 <div id="__printErr"></div>
 <div class="toolbar">
   <span style="font-weight:700;color:#38bdf8;margin-right:4px;">Labels</span>
-  <span class="print-tip">⚠ Print dialog: Margins=None · Scale=100% (not "Fit") · Paper=${w}×${h}mm · No headers/footers</span>
+  <span class="print-tip">⚠ Print dialog: Margins=None · Scale=100% · No headers/footers · Printer paper size must be set to ${w}×${h}mm in Windows printer settings</span>
   <label style="font-size:11px;color:#94a3b8;">Template:</label>
   <select id="tmplSel">${tmplOptions}</select>
   <label style="font-size:11px;color:#94a3b8;">Size:</label>
@@ -358,10 +357,9 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
 // ─── Calibration print ────────────────────────────────────────────────────────
 
 export function buildCalibrationHTML(widthMm: number, heightMm: number): string {
-  const calOrientation = widthMm >= heightMm ? 'landscape' : 'portrait'
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Label Calibration ${widthMm}×${heightMm}mm</title>
 <style>
-@page { size: ${widthMm}mm ${heightMm}mm ${calOrientation}; margin: 0; }
+@page { margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { font-family: Arial, sans-serif; }
 .label {
