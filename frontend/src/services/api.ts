@@ -132,3 +132,10 @@ export const getOperationsSummary = (params?: Record<string, string>) => api.get
 export const getMySales = (params?: Record<string, string>) => api.get('/reports/my-sales', { params })
 export const getMyRefurb = (params?: Record<string, string>) => api.get('/reports/my-refurb', { params })
 export const getCeoDashboard = (params?: Record<string, string>) => api.get('/reports/ceo-dashboard', { params })
+
+// Label Templates
+export const getLabelTemplatesAPI = () => api.get('/label-templates')
+export const createLabelTemplateAPI = (data: unknown) => api.post('/label-templates', data)
+export const updateLabelTemplateAPI = (id: string, data: unknown) => api.put(`/label-templates/${id}`, data)
+export const deleteLabelTemplateAPI = (id: string) => api.delete(`/label-templates/${id}`)
+export const setDefaultLabelTemplateAPI = (id: string) => api.post(`/label-templates/${id}/set-default`)

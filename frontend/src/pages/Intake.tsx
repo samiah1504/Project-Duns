@@ -4,8 +4,8 @@ import toast from 'react-hot-toast'
 import {
   getLabelSizes, getSelectedLabelSize, saveSelectedLabelSizeId, LabelSize,
 } from '../hooks/useLabelSizes'
-import { getDefaultTemplate, getTemplates } from '../hooks/useLabelTemplates'
 import { buildPrintHTML, DeviceForLabel } from '../utils/labelRenderer'
+import { fetchTemplates } from '../hooks/useLabelTemplateAPI'
 import {
   getPurchaseOrders, getSuppliers, createPurchaseOrder,
   receivePurchaseOrder, getPODevices,
@@ -19,7 +19,7 @@ import {
 
 type LabelDevice = DeviceForLabel
 
-function printDeviceLabels(devices: LabelDevice[]) {
+async function printDeviceLabels(devices: LabelDevice[]) {
   if (!devices.length) return
   const selectedSize = getSelectedLabelSize()
   if (!selectedSize) {
@@ -27,21 +27,23 @@ function printDeviceLabels(devices: LabelDevice[]) {
     return
   }
   const sizes = getLabelSizes()
-  const template = getDefaultTemplate()
-  const templates = getTemplates()
+  let apiTemplates = await fetchTemplates().catch(() => [])
+  const allTemplates = apiTemplates.map(t => t.data)
+  const template = apiTemplates.find(t => t.is_default)?.data ?? allTemplates[0]
+  if (!template) { toast.error('No label template found. Set one up in the Label Designer.'); return }
+
   const w = window.open('', '_blank', 'width=900,height=700')
   if (!w) { toast.error('Pop-up blocked — please allow pop-ups for this page'); return }
 
-  const html = buildPrintHTML(template, devices, selectedSize, sizes, templates, 1)
+  const html = buildPrintHTML(template, devices, selectedSize, sizes, allTemplates, 1)
   w.document.open()
   w.document.write(html)
   w.document.close()
 
-  // re-render when user changes template/size/copies in popup toolbar
   ;(window as typeof window & { __labelRerender: unknown }).__labelRerender = (
     size: LabelSize, tmpl: typeof template, copies: number
   ) => {
-    const next = buildPrintHTML(tmpl, devices, size, sizes, templates, copies)
+    const next = buildPrintHTML(tmpl, devices, size, sizes, allTemplates, copies)
     saveSelectedLabelSizeId(size.id)
     w.document.open()
     w.document.write(next)

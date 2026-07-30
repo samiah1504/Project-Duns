@@ -39,6 +39,7 @@ from app.database import engine, Base
 import app.models.sale_payment  # noqa: F401 — registers SalePayment with Base.metadata
 import app.models.expense       # noqa: F401 — registers Expense with Base.metadata
 import app.models.return_rma    # noqa: F401 — registers ReturnBatch with Base.metadata
+import app.models.label_template  # noqa: F401 — registers LabelTemplate with Base.metadata
 
 
 @asynccontextmanager
@@ -123,6 +124,7 @@ app.add_middleware(
 from app.routers import (
     auth, devices, parts, purchase_orders,
     refurb_jobs, sales, customers, suppliers, users, returns, reports, phone_models, expenses,
+    label_templates,
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -138,6 +140,7 @@ app.include_router(returns.router, prefix="/api/returns", tags=["returns"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(phone_models.router, prefix="/api/phone-models", tags=["phone-models"])
 app.include_router(expenses.router, prefix="/api/expenses", tags=["expenses"])
+app.include_router(label_templates.router, prefix="/api/label-templates", tags=["label-templates"])
 
 
 @app.get("/api/health")

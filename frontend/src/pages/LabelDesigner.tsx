@@ -1,12 +1,14 @@
 /**
  * Visual Label Designer — drag-and-drop canvas editor.
  *
- * Canvas model:
- *   - Label dimensions come from the selected LabelSize (mm).
- *   - Scale = CANVAS_MAX_W / labelW  (capped so height ≤ CANVAS_MAX_H).
- *   - Element positions are stored in mm; pixels = mm × scale.
- *   - During drag/resize: DOM style is updated directly (no React re-render).
- *   - On mouseup: final position committed to React state → localStorage.
+ * Persistence model:
+ *   - All templates are stored in the database via /api/label-templates.
+ *   - On first load, if the DB is empty, the built-in preset templates are
+ *     seeded automatically.
+ *   - isDirty tracks unsaved changes; the user is prompted before switching
+ *     away or leaving the page.
+ *   - "Save" overwrites the current DB record.
+ *   - "Save As" creates a new DB record with a prompted name.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
@@ -14,21 +16,24 @@ import toast from 'react-hot-toast'
 import { PageHeader, Card, Btn } from '../components/Layout'
 import {
   LabelTemplate, LabelField, FieldType, FIELD_LABELS, isBarcode,
-  getTemplates, saveTemplates, getDefaultTemplateId, saveDefaultTemplateId,
-  createTemplate, deleteTemplate, autoPlaceFields, needsPlacement,
+  autoPlaceFields, needsPlacement, getTemplates as getPresetTemplates,
 } from '../hooks/useLabelTemplates'
 import {
   getLabelSizes, saveLabelSizes, getSelectedLabelSizeId, saveSelectedLabelSizeId, LabelSize,
 } from '../hooks/useLabelSizes'
+import {
+  fetchTemplates, saveNewTemplate, overwriteTemplate, removeTemplate, markDefault,
+  APILabelTemplate,
+} from '../hooks/useLabelTemplateAPI'
 import { buildPrintHTML, fieldValue, SAMPLE_DEVICE } from '../utils/labelRenderer'
 import { barcodeSVG } from '../utils/barcode'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CANVAS_MAX_W = 580   // px
-const CANVAS_MAX_H = 460   // px
-const NUDGE_SM = 0.5       // mm
-const NUDGE_LG = 2         // mm
+const CANVAS_MAX_W = 580
+const CANVAS_MAX_H = 460
+const NUDGE_SM = 0.5   // mm
+const NUDGE_LG = 2     // mm
 
 type Handle = 'tl'|'tc'|'tr'|'ml'|'mr'|'bl'|'bc'|'br'
 
@@ -39,7 +44,7 @@ function computeScale(lw: number, lh: number): number {
 }
 
 function px(mm: number, scale: number) { return mm * scale }
-function mm(pixels: number, scale: number) { return pixels / scale }
+function mmFromPx(pixels: number, scale: number) { return pixels / scale }
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
 
 // ─── Handle positions ─────────────────────────────────────────────────────────
@@ -54,8 +59,6 @@ const HANDLE_POSITIONS: Record<Handle, React.CSSProperties> = {
   bc: { bottom: -5, left: 'calc(50% - 4px)',cursor: 's-resize'  },
   br: { bottom: -5, right: -5,              cursor: 'se-resize' },
 }
-
-// ─── Sample display values ────────────────────────────────────────────────────
 
 const CO_SAMPLE = { name: 'TARDMART' }
 
@@ -90,7 +93,7 @@ function CanvasElem({ field, scale, selected, onSelect, onDragStart, onResizeSta
       )
     }
     const fsPt = field.fontSize > 0 ? field.fontSize : Math.max(5, h * 0.60 * 2.835)
-    const fsPx = fsPt * (96 / 72)  // pt → px at 96dpi
+    const fsPx = fsPt * (96 / 72)
     return (
       <div style={{
         display: 'flex', alignItems: 'center', height: '100%',
@@ -122,25 +125,18 @@ function CanvasElem({ field, scale, selected, onSelect, onDragStart, onResizeSta
         cursor: 'move',
         boxSizing: 'border-box',
         border: selected ? '1.5px solid #3b82f6' : '1px dashed transparent',
-        outline: selected ? 'none' : undefined,
         userSelect: 'none',
         overflow: 'hidden',
       }}
     >
       {content()}
-
-      {/* Resize handles */}
       {selected && (Object.keys(HANDLE_POSITIONS) as Handle[]).map(h => (
         <div
           key={h}
           onMouseDown={e => { e.stopPropagation(); onResizeStart(e, field.type, h) }}
           style={{
-            position: 'absolute',
-            width: 9, height: 9,
-            background: '#3b82f6',
-            border: '1.5px solid #fff',
-            borderRadius: 2,
-            zIndex: 10001,
+            position: 'absolute', width: 9, height: 9,
+            background: '#3b82f6', border: '1.5px solid #fff', borderRadius: 2, zIndex: 10001,
             ...HANDLE_POSITIONS[h],
           }}
         />
@@ -156,93 +152,73 @@ interface CanvasProps {
   size: LabelSize
   selectedField: FieldType | null
   onSelectField: (t: FieldType | null) => void
-  onUpdateField: (type: FieldType, patch: Partial<LabelField>) => void
   onCommitField: (type: FieldType, patch: Partial<LabelField>) => void
 }
 
-function Canvas({ template, size, selectedField, onSelectField, onUpdateField, onCommitField }: CanvasProps) {
+function Canvas({ template, size, selectedField, onSelectField, onCommitField }: CanvasProps) {
   const scale = computeScale(size.widthMm, size.heightMm)
   const W = size.widthMm, H = size.heightMm
   const { marginLeft: ml, marginRight: mr, marginTop: mt, marginBottom: mb } = template
 
-  // Refs for smooth drag/resize without React re-renders
   const dragRef = useRef<null | {
-    type: FieldType
-    startMx: number; startMy: number
-    startFx: number; startFy: number
-    fw: number; fh: number   // field w/h (constant during drag)
+    type: FieldType; startMx: number; startMy: number
+    startFx: number; startFy: number; fw: number; fh: number
     endX: number; endY: number
   }>(null)
 
   const resizeRef = useRef<null | {
-    type: FieldType
-    handle: Handle
+    type: FieldType; handle: Handle
     startMx: number; startMy: number
     startFx: number; startFy: number; startFw: number; startFh: number
     endX: number; endY: number; endW: number; endH: number
   }>(null)
 
-  // Live overrides during interaction (avoids saving to localStorage on every px)
   const [livePos, setLivePos] = useState<Record<string, { x: number; y: number; w: number; h: number }>>({})
-
-  // Element DOM refs for direct style update
-  const elemDomRefs = useRef<Partial<Record<FieldType, HTMLDivElement>>>({})
 
   const getField = useCallback((type: FieldType) =>
     template.fields.find(f => f.type === type), [template.fields])
-
-  // ── Drag ──────────────────────────────────────────────────────────────────
 
   const onDragStart = useCallback((e: React.MouseEvent, type: FieldType) => {
     e.preventDefault()
     const f = getField(type)
     if (!f) return
     dragRef.current = {
-      type,
-      startMx: e.pageX, startMy: e.pageY,
+      type, startMx: e.pageX, startMy: e.pageY,
       startFx: f.x ?? 0, startFy: f.y ?? 0,
-      fw: f.w ?? 30, fh: f.h ?? 5,
-      endX: f.x ?? 0, endY: f.y ?? 0,
+      fw: f.w ?? 30, fh: f.h ?? 5, endX: f.x ?? 0, endY: f.y ?? 0,
     }
   }, [getField])
-
-  // ── Resize ────────────────────────────────────────────────────────────────
 
   const onResizeStart = useCallback((e: React.MouseEvent, type: FieldType, handle: Handle) => {
     e.preventDefault(); e.stopPropagation()
     const f = getField(type)
     if (!f) return
     resizeRef.current = {
-      type, handle,
-      startMx: e.pageX, startMy: e.pageY,
+      type, handle, startMx: e.pageX, startMy: e.pageY,
       startFx: f.x ?? 0, startFy: f.y ?? 0,
       startFw: f.w ?? 30, startFh: f.h ?? 5,
       endX: f.x ?? 0, endY: f.y ?? 0, endW: f.w ?? 30, endH: f.h ?? 5,
     }
   }, [getField])
 
-  // ── Document mouse handlers ───────────────────────────────────────────────
-
   useEffect(() => {
     const MIN_W = 3, MIN_H = 2
 
     const onMove = (e: MouseEvent) => {
-      // ── drag ──
       const dr = dragRef.current
       if (dr) {
-        const dxMm = mm(e.pageX - dr.startMx, scale)
-        const dyMm = mm(e.pageY - dr.startMy, scale)
+        const dxMm = mmFromPx(e.pageX - dr.startMx, scale)
+        const dyMm = mmFromPx(e.pageY - dr.startMy, scale)
         const nx = clamp(dr.startFx + dxMm, 0, W - dr.fw)
         const ny = clamp(dr.startFy + dyMm, 0, H - dr.fh)
         dr.endX = nx; dr.endY = ny
         setLivePos(prev => ({ ...prev, [dr.type]: { x: nx, y: ny, w: dr.fw, h: dr.fh } }))
         return
       }
-      // ── resize ──
       const rr = resizeRef.current
       if (!rr) return
-      const dxMm = mm(e.pageX - rr.startMx, scale)
-      const dyMm = mm(e.pageY - rr.startMy, scale)
+      const dxMm = mmFromPx(e.pageX - rr.startMx, scale)
+      const dyMm = mmFromPx(e.pageY - rr.startMy, scale)
       let { startFx: rx, startFy: ry, startFw: rw, startFh: rh } = rr
       const h = rr.handle
       if (h.includes('l')) { const nw = Math.max(MIN_W, rw - dxMm); rx = rx + rw - nw; rw = nw }
@@ -278,8 +254,6 @@ function Canvas({ template, size, selectedField, onSelectField, onUpdateField, o
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
   }, [scale, W, H, onCommitField])
 
-  // ── Keyboard nudge ────────────────────────────────────────────────────────
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!selectedField) return
@@ -291,9 +265,7 @@ function Canvas({ template, size, selectedField, onSelectField, onUpdateField, o
       if (e.key === 'ArrowRight') dx =  step
       if (e.key === 'ArrowUp')    dy = -step
       if (e.key === 'ArrowDown')  dy =  step
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        onCommitField(selectedField, { enabled: false }); return
-      }
+      if (e.key === 'Delete' || e.key === 'Backspace') { onCommitField(selectedField, { enabled: false }); return }
       if (dx === 0 && dy === 0) return
       e.preventDefault()
       const f = getField(selectedField)
@@ -312,31 +284,23 @@ function Canvas({ template, size, selectedField, onSelectField, onUpdateField, o
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {/* Canvas outer — background represents label area */}
       <div
         onClick={() => onSelectField(null)}
         style={{
           position: 'relative',
           width: px(W, scale), height: px(H, scale),
-          background: '#fff',
-          border: '1px solid #94a3b8',
+          background: '#fff', border: '1px solid #94a3b8',
           boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-          overflow: 'visible',
-          cursor: 'default',
-          flexShrink: 0,
+          overflow: 'visible', cursor: 'default', flexShrink: 0,
         }}
       >
-        {/* Safe-area dashed boundary */}
         <div style={{
           position: 'absolute',
           left: px(ml, scale), top: px(mt, scale),
           width: px(safW, scale), height: px(safH, scale),
-          border: '1px dashed #cbd5e1',
-          pointerEvents: 'none',
-          zIndex: 0,
+          border: '1px dashed #cbd5e1', pointerEvents: 'none', zIndex: 0,
         }} />
 
-        {/* Clip warning overlay */}
         {template.fields.filter(f => f.enabled).map(f => {
           const fx = f.x ?? 0, fy = f.y ?? 0, fw = f.w ?? 0, fh = f.h ?? 0
           const clips = fx < ml || fy < mt || (fx + fw) > (W - mr) || (fy + fh) > (H - mb)
@@ -353,7 +317,6 @@ function Canvas({ template, size, selectedField, onSelectField, onUpdateField, o
           )
         })}
 
-        {/* Field elements */}
         {[...template.fields]
           .filter(f => f.enabled)
           .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
@@ -373,8 +336,6 @@ function Canvas({ template, size, selectedField, onSelectField, onUpdateField, o
             )
           })}
       </div>
-
-      {/* Scale indicator */}
       <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6 }}>
         {size.widthMm} × {size.heightMm} mm &nbsp;|&nbsp; scale {scale.toFixed(1)}px/mm
         &nbsp;|&nbsp; ↑↓←→ nudge · Shift+arrow = 2mm · Delete = hide
@@ -413,7 +374,6 @@ function PropertiesPanel({
         {FIELD_LABELS[field.type]}
       </div>
 
-      {/* Position */}
       <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Position</div>
       <div style={GR('1fr 1fr')}>
         {numField('X', 'x', 0, labelW, 0.1, 'mm')}
@@ -424,7 +384,6 @@ function PropertiesPanel({
         {numField('Height', 'h', 2, labelH, 0.5, 'mm')}
       </div>
 
-      {/* Appearance */}
       {!isBarcode(field) && (
         <>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', margin: '6px 0 4px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Text</div>
@@ -475,7 +434,6 @@ function PropertiesPanel({
         </>
       )}
 
-      {/* Barcode */}
       {isBarcode(field) && (
         <>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', margin: '6px 0 4px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Barcode</div>
@@ -491,13 +449,11 @@ function PropertiesPanel({
               </select>
             </div>
           </div>
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 6 }}>
-              <input type="checkbox" checked={!!field.barcodeShowText}
-                onChange={e => onUpdate({ barcodeShowText: e.target.checked })} />
-              <span style={{ fontSize: 12 }}>Show IMEI digits below barcode</span>
-            </label>
-          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 6 }}>
+            <input type="checkbox" checked={!!field.barcodeShowText}
+              onChange={e => onUpdate({ barcodeShowText: e.target.checked })} />
+            <span style={{ fontSize: 12 }}>Show IMEI digits below barcode</span>
+          </label>
         </>
       )}
     </div>
@@ -521,12 +477,8 @@ function AlignmentToolbar({
   const fw = field.w ?? 30, fh = field.h ?? 5
 
   const btn = (label: string, patch: Partial<LabelField>) => (
-    <button key={label} onClick={() => onUpdate(patch)}
-      title={label}
-      style={{
-        padding: '4px 8px', fontSize: 11, border: '1px solid #e2e8f0',
-        borderRadius: 4, background: '#f8fafc', cursor: 'pointer', whiteSpace: 'nowrap',
-      }}>
+    <button key={label} onClick={() => onUpdate(patch)} title={label}
+      style={{ padding: '4px 8px', fontSize: 11, border: '1px solid #e2e8f0', borderRadius: 4, background: '#f8fafc', cursor: 'pointer', whiteSpace: 'nowrap' }}>
       {label}
     </button>
   )
@@ -562,21 +514,19 @@ function LayerToolbar({
     onUpdateTemplate({ ...template, fields: reindexed })
   }
 
-  const idx = [...template.fields].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
-    .findIndex(f => f.type === field.type)
+  const sorted = [...template.fields].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+  const idx = sorted.findIndex(f => f.type === field.type)
   const total = template.fields.filter(f => f.enabled).length
 
   const swap = (arr: LabelField[], i: number, j: number) => {
-    const n = [...arr]
-    ;[n[i], n[j]] = [n[j], n[i]]
-    return n
+    const n = [...arr]; [n[i], n[j]] = [n[j], n[i]]; return n
   }
 
   const btn = (label: string, disabled: boolean, fn: () => void) => (
     <button key={label} onClick={fn} disabled={disabled}
       style={{
-        padding: '4px 8px', fontSize: 11, border: '1px solid #e2e8f0',
-        borderRadius: 4, cursor: disabled ? 'default' : 'pointer',
+        padding: '4px 8px', fontSize: 11, border: '1px solid #e2e8f0', borderRadius: 4,
+        cursor: disabled ? 'default' : 'pointer',
         background: disabled ? '#f1f5f9' : '#f8fafc',
         color: disabled ? '#cbd5e1' : '#374151',
       }}>
@@ -597,18 +547,58 @@ function LayerToolbar({
   )
 }
 
+// ─── Field list ───────────────────────────────────────────────────────────────
+
+function FieldList({
+  template, selectedField, onToggle, onSelectField,
+}: {
+  template: LabelTemplate
+  selectedField: FieldType | null
+  onToggle: (t: FieldType) => void
+  onSelectField: (t: FieldType) => void
+}) {
+  return (
+    <Card style={{ padding: 10, minWidth: 180 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Fields</div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 8 }}>Check to show · Click to select</div>
+      {template.fields.map(f => (
+        <div key={f.type}
+          onClick={() => { if (f.enabled) onSelectField(f.type) }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px',
+            borderRadius: 5, marginBottom: 2, cursor: f.enabled ? 'pointer' : 'default',
+            background: selectedField === f.type ? '#eff6ff' : f.enabled ? '#fff' : '#f8fafc',
+            border: `1px solid ${selectedField === f.type ? '#3b82f6' : '#e8ecf0'}`,
+            opacity: f.enabled ? 1 : 0.5,
+          }}>
+          <input type="checkbox" checked={f.enabled}
+            onChange={e => { e.stopPropagation(); onToggle(f.type) }}
+            style={{ accentColor: '#3b82f6', flexShrink: 0 }} />
+          <span style={{ fontSize: 11, fontWeight: f.enabled ? 600 : 400, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {FIELD_LABELS[f.type]}
+          </span>
+        </div>
+      ))}
+    </Card>
+  )
+}
+
 // ─── Template list sidebar ────────────────────────────────────────────────────
 
 function TemplateSidebar({
-  templates, activeId, defaultId, sizes,
-  onSelect, onSetDefault, onDuplicate, onDelete, onCreateNew, onSizesChange,
+  templates, activeId, sizes, isDirty,
+  onSelect, onSetDefault, onSaveAs, onDelete, onSizesChange,
 }: {
-  templates: LabelTemplate[]; activeId: string; defaultId: string; sizes: LabelSize[]
-  onSelect: (id: string) => void; onSetDefault: () => void; onDuplicate: () => void
-  onDelete: () => void; onCreateNew: (name: string) => void; onSizesChange: (s: LabelSize[]) => void
+  templates: APILabelTemplate[]
+  activeId: string
+  sizes: LabelSize[]
+  isDirty: boolean
+  onSelect: (id: string) => void
+  onSetDefault: () => void
+  onSaveAs: () => void
+  onDelete: () => void
+  onSizesChange: (s: LabelSize[]) => void
 }) {
-  const [addingTmpl, setAddingTmpl] = useState(false)
-  const [newName, setNewName] = useState('')
   const [addingSize, setAddingSize] = useState(false)
   const [sName, setSName] = useState(''), [sW, setSW] = useState(''), [sH, setSH] = useState('')
   const F: React.CSSProperties = { padding: '4px 7px', border: '1px solid #d1d5db', borderRadius: 5, fontSize: 12, width: '100%' }
@@ -625,6 +615,9 @@ function TemplateSidebar({
     <div style={{ width: 210, flexShrink: 0 }}>
       <Card style={{ padding: 12, marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Templates</div>
+        {templates.length === 0 && (
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>No templates yet. Save one to start.</div>
+        )}
         {templates.map(t => (
           <div key={t.id} onClick={() => onSelect(t.id)}
             style={{
@@ -635,27 +628,15 @@ function TemplateSidebar({
               display: 'flex', alignItems: 'center', gap: 4,
             }}>
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-            {t.id === defaultId && <span style={{ fontSize: 9, background: '#22c55e', color: '#fff', borderRadius: 3, padding: '1px 4px', fontWeight: 700, flexShrink: 0 }}>DEF</span>}
+            {t.is_default && <span style={{ fontSize: 9, background: '#22c55e', color: '#fff', borderRadius: 3, padding: '1px 4px', fontWeight: 700, flexShrink: 0 }}>DEF</span>}
+            {t.id === activeId && isDirty && <span style={{ fontSize: 9, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', fontWeight: 700, flexShrink: 0 }}>●</span>}
           </div>
         ))}
-        {addingTmpl ? (
-          <div style={{ marginTop: 6 }}>
-            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { onCreateNew(newName); setAddingTmpl(false); setNewName('') } if (e.key === 'Escape') setAddingTmpl(false) }}
-              style={{ ...F, marginBottom: 5 }} placeholder="Template name" />
-            <div style={{ display: 'flex', gap: 5 }}>
-              <Btn size="sm" onClick={() => { onCreateNew(newName); setAddingTmpl(false); setNewName('') }}>Create</Btn>
-              <Btn size="sm" variant="secondary" onClick={() => setAddingTmpl(false)}>Cancel</Btn>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-            <Btn size="sm" onClick={() => setAddingTmpl(true)}>+ New</Btn>
-            <Btn size="sm" variant="secondary" onClick={onDuplicate}>Copy</Btn>
-            <Btn size="sm" onClick={onSetDefault}>Default</Btn>
-            <Btn size="sm" variant="danger" onClick={onDelete}>Del</Btn>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
+          <Btn size="sm" onClick={onSaveAs}>+ Save As</Btn>
+          <Btn size="sm" onClick={onSetDefault}>Default</Btn>
+          <Btn size="sm" variant="danger" onClick={onDelete}>Del</Btn>
+        </div>
       </Card>
 
       <Card style={{ padding: 12 }}>
@@ -691,133 +672,254 @@ function TemplateSidebar({
   )
 }
 
-// ─── Field list (left of canvas) ─────────────────────────────────────────────
-
-function FieldList({
-  template, selectedField, onToggle, onSelectField, onUpdateTemplate,
-}: {
-  template: LabelTemplate
-  selectedField: FieldType | null
-  onToggle: (t: FieldType) => void
-  onSelectField: (t: FieldType) => void
-  onUpdateTemplate: (t: LabelTemplate) => void
-}) {
-  return (
-    <Card style={{ padding: 10, minWidth: 180 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Fields</div>
-      <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 8 }}>Check to show · Click to select</div>
-      {template.fields.map(f => (
-        <div key={f.type}
-          onClick={() => { if (f.enabled) onSelectField(f.type) }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px',
-            borderRadius: 5, marginBottom: 2, cursor: f.enabled ? 'pointer' : 'default',
-            background: selectedField === f.type ? '#eff6ff' : f.enabled ? '#fff' : '#f8fafc',
-            border: `1px solid ${selectedField === f.type ? '#3b82f6' : '#e8ecf0'}`,
-            opacity: f.enabled ? 1 : 0.5,
-          }}>
-          <input type="checkbox" checked={f.enabled}
-            onChange={e => { e.stopPropagation(); onToggle(f.type) }}
-            style={{ accentColor: '#3b82f6', flexShrink: 0 }} />
-          <span style={{ fontSize: 11, fontWeight: f.enabled ? 600 : 400, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {FIELD_LABELS[f.type]}
-          </span>
-        </div>
-      ))}
-    </Card>
-  )
-}
-
 // ─── Main LabelDesigner ───────────────────────────────────────────────────────
 
 export default function LabelDesigner() {
-  const [templates, setTemplates] = useState<LabelTemplate[]>(getTemplates)
-  const [activeId, setActiveId] = useState<string>(getDefaultTemplateId)
-  const [defaultId, setDefaultId] = useState<string>(getDefaultTemplateId)
+  // API-persisted templates list
+  const [apiTemplates, setApiTemplates] = useState<APILabelTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Working copy of the active template (local edits before save)
+  const [workingTemplate, setWorkingTemplate] = useState<LabelTemplate | null>(null)
+  const [activeApiId, setActiveApiId] = useState<string | null>(null)
+  const [isDirty, setIsDirty] = useState(false)
+
   const [sizes, setSizes] = useState<LabelSize[]>(getLabelSizes)
   const [selectedSizeId, setSelectedSizeId] = useState<string | null>(getSelectedLabelSizeId)
   const [selectedField, setSelectedField] = useState<FieldType | null>(null)
+  const [saving, setSaving] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameName, setRenameName] = useState('')
 
-  const rawActive = templates.find(t => t.id === activeId) ?? templates[0]
   const selectedSize = sizes.find(s => s.id === selectedSizeId) ?? sizes[0] ?? null
 
-  // Auto-place fields when the template or size changes
-  const active = selectedSize && needsPlacement(rawActive)
-    ? autoPlaceFields(rawActive, selectedSize.widthMm, selectedSize.heightMm)
-    : rawActive
+  // ── Load templates on mount ────────────────────────────────────────────────
 
-  // Persist active on every change
-  const persistTemplates = useCallback((next: LabelTemplate[]) => {
-    setTemplates(next)
-    saveTemplates(next)
-  }, [])
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        let list = await fetchTemplates()
 
-  const persistSizes = (next: LabelSize[]) => {
-    setSizes(next)
-    saveLabelSizes(next)
+        // Seed from presets if DB is empty
+        if (list.length === 0) {
+          const presets = getPresetTemplates()
+          for (let i = 0; i < presets.length; i++) {
+            const p = presets[i]
+            const created = await saveNewTemplate(p.name, p)
+            if (i === 0) {
+              await markDefault(created.id)
+              list.push({ ...created, is_default: true })
+            } else {
+              list.push(created)
+            }
+          }
+          list = await fetchTemplates()
+        }
+
+        if (cancelled) return
+        setApiTemplates(list)
+
+        const def = list.find(t => t.is_default) ?? list[0]
+        if (def) {
+          setActiveApiId(def.id)
+          loadWorkingCopy(def, list, selectedSize ?? sizes[0] ?? null)
+        }
+      } catch (err) {
+        toast.error('Failed to load templates from server')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadWorkingCopy = (
+    apiTmpl: APILabelTemplate,
+    list: APILabelTemplate[],
+    size: LabelSize | null,
+  ) => {
+    let tmpl: LabelTemplate = { ...apiTmpl.data, id: apiTmpl.id, name: apiTmpl.name }
+    if (size && needsPlacement(tmpl)) {
+      tmpl = autoPlaceFields(tmpl, size.widthMm, size.heightMm)
+    }
+    setWorkingTemplate(tmpl)
+    setIsDirty(false)
+    setSelectedField(null)
+    void list // suppress lint
   }
+
+  // Auto-place when size changes without overwriting already-placed fields
+  useEffect(() => {
+    if (!workingTemplate || !selectedSize) return
+    if (needsPlacement(workingTemplate)) {
+      setWorkingTemplate(t => t ? autoPlaceFields(t, selectedSize.widthMm, selectedSize.heightMm) : t)
+    }
+  }, [selectedSizeId])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn on browser close if dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  // ── Template switching ─────────────────────────────────────────────────────
+
+  const switchTemplate = (id: string) => {
+    if (id === activeApiId) return
+    if (isDirty) {
+      const go = window.confirm('You have unsaved changes. Discard and switch templates?')
+      if (!go) return
+    }
+    const found = apiTemplates.find(t => t.id === id)
+    if (!found) return
+    setActiveApiId(id)
+    loadWorkingCopy(found, apiTemplates, selectedSize)
+  }
+
+  // ── Update working copy ────────────────────────────────────────────────────
 
   const updateActive = useCallback((tmpl: LabelTemplate) => {
-    const next = templates.map(t => t.id === tmpl.id ? tmpl : t)
-    persistTemplates(next)
-  }, [templates, persistTemplates])
-
-  // When auto-placement runs, save it back to templates
-  useEffect(() => {
-    if (selectedSize && needsPlacement(rawActive)) {
-      updateActive(autoPlaceFields(rawActive, selectedSize.widthMm, selectedSize.heightMm))
-    }
-  }, [activeId, selectedSizeId])  // eslint-disable-line react-hooks/exhaustive-deps
+    setWorkingTemplate(tmpl)
+    setIsDirty(true)
+  }, [])
 
   const updateField = useCallback((type: FieldType, patch: Partial<LabelField>) => {
-    const fields = active.fields.map(f => f.type === type ? { ...f, ...patch } : f)
-    updateActive({ ...active, fields })
-  }, [active, updateActive])
+    setWorkingTemplate(prev => {
+      if (!prev) return prev
+      return { ...prev, fields: prev.fields.map(f => f.type === type ? { ...f, ...patch } : f) }
+    })
+    setIsDirty(true)
+  }, [])
 
-  // Template actions
-  const handleSetDefault = () => { saveDefaultTemplateId(active.id); setDefaultId(active.id); toast.success('Default set') }
-  const handleDuplicate = () => {
-    const t = createTemplate(`${active.name} (copy)`, active)
-    setTemplates(getTemplates()); setActiveId(t.id); setSelectedField(null)
+  // ── Save (overwrite existing) ──────────────────────────────────────────────
+
+  const handleSave = async () => {
+    if (!workingTemplate || !activeApiId) {
+      toast('Use "Save As" to create a new template'); return
+    }
+    setSaving(true)
+    try {
+      const updated = await overwriteTemplate(activeApiId, workingTemplate.name, workingTemplate)
+      setApiTemplates(prev => prev.map(t => t.id === activeApiId ? updated : t))
+      setIsDirty(false)
+      toast.success('Template saved')
+    } catch {
+      toast.error('Save failed')
+    } finally {
+      setSaving(false)
+    }
   }
-  const handleDelete = () => {
-    if (templates.length <= 1) { toast.error('Cannot delete the last template'); return }
-    if (!confirm(`Delete "${active.name}"?`)) return
-    deleteTemplate(active.id)
-    const next = getTemplates(); setTemplates(next); setActiveId(next[0].id); setDefaultId(getDefaultTemplateId()); setSelectedField(null)
+
+  // ── Save As (new record) ───────────────────────────────────────────────────
+
+  const handleSaveAs = async () => {
+    const name = window.prompt('Template name:', workingTemplate?.name ?? 'My Template')
+    if (!name?.trim()) return
+    if (!workingTemplate) return
+    setSaving(true)
+    try {
+      const created = await saveNewTemplate(name.trim(), { ...workingTemplate, name: name.trim() })
+      setApiTemplates(prev => [...prev, created])
+      setActiveApiId(created.id)
+      setWorkingTemplate({ ...workingTemplate, id: created.id, name: created.name })
+      setIsDirty(false)
+      toast.success(`"${created.name}" saved`)
+    } catch {
+      toast.error('Save failed')
+    } finally {
+      setSaving(false)
+    }
   }
-  const handleCreateNew = (name: string) => {
-    if (!name.trim()) { toast.error('Name required'); return }
-    const t = createTemplate(name.trim()); setTemplates(getTemplates()); setActiveId(t.id); setSelectedField(null)
+
+  // ── Set default ────────────────────────────────────────────────────────────
+
+  const handleSetDefault = async () => {
+    if (!activeApiId) return
+    try {
+      await markDefault(activeApiId)
+      setApiTemplates(prev => prev.map(t => ({ ...t, is_default: t.id === activeApiId })))
+      toast.success('Default template updated')
+    } catch {
+      toast.error('Failed to set default')
+    }
   }
+
+  // ── Delete ─────────────────────────────────────────────────────────────────
+
+  const handleDelete = async () => {
+    if (!activeApiId) return
+    if (apiTemplates.length <= 1) { toast.error('Cannot delete the last template'); return }
+    const name = apiTemplates.find(t => t.id === activeApiId)?.name ?? 'this template'
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
+    try {
+      await removeTemplate(activeApiId)
+      const next = apiTemplates.filter(t => t.id !== activeApiId)
+      setApiTemplates(next)
+      const fallback = next.find(t => t.is_default) ?? next[0]
+      if (fallback) { setActiveApiId(fallback.id); loadWorkingCopy(fallback, next, selectedSize) }
+      toast.success('Deleted')
+    } catch {
+      toast.error('Delete failed')
+    }
+  }
+
+  // ── Rename ─────────────────────────────────────────────────────────────────
+
+  const handleRenameSubmit = () => {
+    if (!renameName.trim() || !workingTemplate) { toast.error('Name required'); return }
+    setWorkingTemplate({ ...workingTemplate, name: renameName.trim() })
+    setIsDirty(true)
+    setRenaming(false)
+  }
+
+  // ── Field toggle ───────────────────────────────────────────────────────────
+
   const handleToggleField = (type: FieldType) => {
-    const f = active.fields.find(x => x.type === type)
+    if (!workingTemplate) return
+    const f = workingTemplate.fields.find(x => x.type === type)
     if (!f) return
     if (f.enabled && selectedField === type) setSelectedField(null)
     updateField(type, { enabled: !f.enabled })
   }
 
+  // ── Test print ─────────────────────────────────────────────────────────────
+
   const handleTestPrint = () => {
-    if (!selectedSize) { toast.error('Select a label size first'); return }
-    const html = buildPrintHTML(active, [SAMPLE_DEVICE], selectedSize, sizes, templates, 1)
+    if (!selectedSize || !workingTemplate) { toast.error('Select a label size first'); return }
+    const allTemplates = apiTemplates.map(t => t.data)
+    const html = buildPrintHTML(workingTemplate, [SAMPLE_DEVICE], selectedSize, sizes, allTemplates, 1)
     const popup = window.open('', '_blank', 'width=900,height=600')
     if (popup) popup.document.write(html)
   }
 
-  const selectedFieldObj = active.fields.find(f => f.type === selectedField) ?? null
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-  // Rename active template
-  const handleRenameSubmit = () => {
-    if (!renameName.trim()) { toast.error('Name required'); return }
-    updateActive({ ...active, name: renameName.trim() }); setRenaming(false)
+  if (loading) {
+    return (
+      <div>
+        <PageHeader title="Label Designer" />
+        <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading templates…</div>
+      </div>
+    )
   }
 
-  // Size selector
-  const handleSizeChange = (id: string) => {
-    setSelectedSizeId(id); saveSelectedLabelSizeId(id)
+  if (!workingTemplate) {
+    return (
+      <div>
+        <PageHeader title="Label Designer" />
+        <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+          No templates found. <Btn onClick={handleSaveAs}>Create First Template</Btn>
+        </div>
+      </div>
+    )
   }
+
+  const selectedFieldObj = workingTemplate.fields.find(f => f.type === selectedField) ?? null
 
   return (
     <div>
@@ -829,63 +931,74 @@ export default function LabelDesigner() {
           <>
             <input autoFocus value={renameName} onChange={e => setRenameName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(); if (e.key === 'Escape') setRenaming(false) }}
-              style={{ padding: '5px 9px', border: '1px solid #3b82f6', borderRadius: 6, fontSize: 14, width: 200 }} />
-            <Btn size="sm" onClick={handleRenameSubmit}>Save</Btn>
+              style={{ padding: '5px 9px', border: '1px solid #3b82f6', borderRadius: 6, fontSize: 14, width: 220 }} />
+            <Btn size="sm" onClick={handleRenameSubmit}>OK</Btn>
             <Btn size="sm" variant="secondary" onClick={() => setRenaming(false)}>Cancel</Btn>
           </>
         ) : (
           <>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{active.name}</span>
-            {active.id === defaultId && <span style={{ fontSize: 10, background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 4, padding: '2px 7px', fontWeight: 700 }}>Default</span>}
-            <Btn size="sm" variant="secondary" onClick={() => { setRenaming(true); setRenameName(active.name) }}>Rename</Btn>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{workingTemplate.name}</span>
+            {apiTemplates.find(t => t.id === activeApiId)?.is_default && (
+              <span style={{ fontSize: 10, background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 4, padding: '2px 7px', fontWeight: 700 }}>Default</span>
+            )}
+            {isDirty && (
+              <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>● Unsaved changes</span>
+            )}
+            <Btn size="sm" variant="secondary" onClick={() => { setRenaming(true); setRenameName(workingTemplate.name) }}>Rename</Btn>
           </>
         )}
 
         <div style={{ flex: 1 }} />
 
-        {/* Size selector */}
         {sizes.length > 0 && (
           <select
             value={selectedSizeId ?? ''}
-            onChange={e => handleSizeChange(e.target.value)}
+            onChange={e => { setSelectedSizeId(e.target.value); saveSelectedLabelSizeId(e.target.value) }}
             style={{ padding: '5px 9px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}>
             {sizes.map(s => <option key={s.id} value={s.id}>{s.name} ({s.widthMm}×{s.heightMm}mm)</option>)}
           </select>
         )}
 
         <Btn variant="secondary" onClick={handleTestPrint}>🖨 Test Print</Btn>
+
+        {/* Prominent Save button */}
+        <div style={{ background: isDirty ? '#22c55e' : '#86efac', borderRadius: 7, padding: 1 }}>
+          <Btn onClick={handleSave} disabled={saving || !isDirty || !activeApiId}>
+            {saving ? 'Saving…' : isDirty ? '💾 Save Template' : '✓ Saved'}
+          </Btn>
+        </div>
       </div>
 
       <div style={{ padding: '0 24px 24px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
 
         {/* Left sidebar */}
         <TemplateSidebar
-          templates={templates} activeId={activeId} defaultId={defaultId} sizes={sizes}
-          onSelect={id => { setActiveId(id); setSelectedField(null) }}
+          templates={apiTemplates}
+          activeId={activeApiId ?? ''}
+          sizes={sizes}
+          isDirty={isDirty}
+          onSelect={switchTemplate}
           onSetDefault={handleSetDefault}
-          onDuplicate={handleDuplicate}
+          onSaveAs={handleSaveAs}
           onDelete={handleDelete}
-          onCreateNew={handleCreateNew}
-          onSizesChange={persistSizes} />
+          onSizesChange={next => { setSizes(next); saveLabelSizes(next) }} />
 
         {/* Field list */}
         <FieldList
-          template={active}
+          template={workingTemplate}
           selectedField={selectedField}
           onToggle={handleToggleField}
-          onSelectField={t => setSelectedField(t)}
-          onUpdateTemplate={updateActive} />
+          onSelectField={t => setSelectedField(t)} />
 
         {/* Canvas */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {selectedSize ? (
             <Canvas
-              template={active}
+              template={workingTemplate}
               size={selectedSize}
               selectedField={selectedField}
               onSelectField={setSelectedField}
-              onUpdateField={(type, patch) => updateField(type, patch)}
-              onCommitField={(type, patch) => updateField(type, patch)} />
+              onCommitField={updateField} />
           ) : (
             <Card style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
               Add a label size using the "Label Sizes" panel on the left to start designing.
@@ -893,45 +1006,30 @@ export default function LabelDesigner() {
           )}
         </div>
 
-        {/* Right: properties + alignment */}
+        {/* Right: properties + alignment + layers + margins */}
         <div style={{ width: 230, flexShrink: 0 }}>
           {selectedFieldObj && selectedSize ? (
             <Card style={{ padding: 12 }}>
               <PropertiesPanel
                 field={selectedFieldObj}
-                template={active}
+                template={workingTemplate}
                 labelW={selectedSize.widthMm}
                 labelH={selectedSize.heightMm}
                 onUpdate={patch => updateField(selectedField!, patch)} />
 
               <AlignmentToolbar
                 field={selectedFieldObj}
-                template={active}
+                template={workingTemplate}
                 labelW={selectedSize.widthMm}
                 labelH={selectedSize.heightMm}
                 onUpdate={patch => updateField(selectedField!, patch)} />
 
               <LayerToolbar
                 field={selectedFieldObj}
-                template={active}
+                template={workingTemplate}
                 onUpdateTemplate={updateActive} />
 
-              {/* Margin controls */}
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Label Margins (mm)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-                  {(['marginLeft', 'marginRight', 'marginTop', 'marginBottom'] as const).map(k => (
-                    <div key={k}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', marginBottom: 2, textAlign: 'center' }}>
-                        {k.replace('margin', '')}
-                      </div>
-                      <input type="number" min="0" max="20" step="0.5" value={active[k]}
-                        onChange={e => updateActive({ ...active, [k]: parseFloat(e.target.value) || 0 })}
-                        style={{ width: '100%', padding: '3px 5px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 11 }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <MarginControls template={workingTemplate} onUpdate={updateActive} />
             </Card>
           ) : (
             <Card style={{ padding: 14 }}>
@@ -941,30 +1039,34 @@ export default function LabelDesigner() {
                 <strong style={{ color: '#475569' }}>Drag</strong> to reposition.<br />
                 <strong style={{ color: '#475569' }}>Drag handles</strong> to resize.<br />
                 <strong style={{ color: '#475569' }}>Arrow keys</strong> to nudge.<br />
-                <strong style={{ color: '#475569' }}>Delete</strong> to hide.<br />
-                <br />
-                Enable/disable fields in the Fields panel.
+                <strong style={{ color: '#475569' }}>Delete</strong> to hide.
               </div>
-
-              {/* Margin controls when nothing selected */}
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Label Margins (mm)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-                  {(['marginLeft', 'marginRight', 'marginTop', 'marginBottom'] as const).map(k => (
-                    <div key={k}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', marginBottom: 2, textAlign: 'center' }}>
-                        {k.replace('margin', '')}
-                      </div>
-                      <input type="number" min="0" max="20" step="0.5" value={active[k]}
-                        onChange={e => updateActive({ ...active, [k]: parseFloat(e.target.value) || 0 })}
-                        style={{ width: '100%', padding: '3px 5px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 11 }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <MarginControls template={workingTemplate} onUpdate={updateActive} />
             </Card>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Margin controls (extracted to avoid duplication) ────────────────────────
+
+function MarginControls({ template, onUpdate }: { template: LabelTemplate; onUpdate: (t: LabelTemplate) => void }) {
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Label Margins (mm)</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+        {(['marginLeft', 'marginRight', 'marginTop', 'marginBottom'] as const).map(k => (
+          <div key={k}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', marginBottom: 2, textAlign: 'center' }}>
+              {k.replace('margin', '')}
+            </div>
+            <input type="number" min="0" max="20" step="0.5" value={template[k]}
+              onChange={e => onUpdate({ ...template, [k]: parseFloat(e.target.value) || 0 })}
+              style={{ width: '100%', padding: '3px 5px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 11 }} />
+          </div>
+        ))}
       </div>
     </div>
   )
