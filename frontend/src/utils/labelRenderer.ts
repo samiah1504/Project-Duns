@@ -230,7 +230,11 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
 }
 .toolbar button { padding: 5px 14px; border-radius: 5px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
 .spacer { flex: 1; }
-.wrap { padding-top: 52px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-bottom: 16px; }
+.print-tip {
+  font-size: 10px; color: #fbbf24; background: #1e293b; border: 1px solid #fbbf24;
+  border-radius: 4px; padding: 3px 8px; white-space: nowrap;
+}
+.wrap { padding-top: 56px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-bottom: 16px; }
 @media print {
   .toolbar { display: none !important; }
   .wrap { padding: 0; gap: 0; background: #fff; }
@@ -238,13 +242,15 @@ html, body { font-family: Arial, sans-serif; background: #e2e8f0; }
 </style>
 </head><body>
 <div class="toolbar">
-  <span style="font-weight:700;color:#38bdf8;margin-right:6px;">Labels</span>
+  <span style="font-weight:700;color:#38bdf8;margin-right:4px;">Labels</span>
+  <span class="print-tip">⚠ In print dialog: Margins=None, uncheck Headers/Footers</span>
   <label style="font-size:11px;color:#94a3b8;">Template:</label>
   <select id="tmplSel">${tmplOptions}</select>
   <label style="font-size:11px;color:#94a3b8;">Size:</label>
   <select id="sizeSel">${sizeOptions}</select>
   <label style="font-size:11px;color:#94a3b8;">Copies:</label>
   <input id="copiesIn" type="number" value="${copies}" min="1" max="50" style="width:52px;">
+  <span style="font-size:10px;color:#64748b;">${w}×${h}mm</span>
   <div class="spacer"></div>
   <button style="background:#22c55e;color:#fff;" onclick="window.print()">🖨 Print</button>
   <button style="background:#ef4444;color:#fff;" onclick="window.close()">✕ Close</button>
@@ -260,5 +266,54 @@ function rerender(){
 }
 ['sizeSel','tmplSel','copiesIn'].forEach(function(id){document.getElementById(id).addEventListener('change',rerender);});
 </script>
+</body></html>`
+}
+
+// ─── Calibration print ────────────────────────────────────────────────────────
+
+export function buildCalibrationHTML(widthMm: number, heightMm: number): string {
+  const orientation = widthMm >= heightMm ? 'landscape' : 'portrait'
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Label Calibration ${widthMm}×${heightMm}mm</title>
+<style>
+@page { size: ${widthMm}mm ${heightMm}mm ${orientation}; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { font-family: Arial, sans-serif; }
+.label {
+  width: ${widthMm}mm; height: ${heightMm}mm;
+  border: 0.5mm solid #000;
+  position: relative; overflow: hidden;
+}
+.ch { position: absolute; left: 0; right: 0; top: 50%; border-top: 0.2mm dashed #aaa; }
+.cv { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 0.2mm dashed #aaa; }
+.corner { position: absolute; width: 3mm; height: 3mm; border-color: #000; border-style: solid; }
+.tl { top: 0; left: 0; border-width: 0.4mm 0 0 0.4mm; }
+.tr { top: 0; right: 0; border-width: 0.4mm 0.4mm 0 0; }
+.bl { bottom: 0; left: 0; border-width: 0 0 0.4mm 0.4mm; }
+.br { bottom: 0; right: 0; border-width: 0 0.4mm 0.4mm 0; }
+.info { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-55%); text-align: center; }
+.info-big { font-size: 6pt; font-weight: bold; }
+.info-sm  { font-size: 5pt; color: #555; }
+@media screen {
+  body { background: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .tip { margin-top: 18px; font-size: 13px; color: #475569; text-align: center; max-width: 380px; line-height: 1.6; }
+}
+@media print { .tip { display: none; } }
+</style></head><body>
+<div class="label">
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+  <div class="ch"></div><div class="cv"></div>
+  <div class="info">
+    <div class="info-big">${widthMm} × ${heightMm} mm</div>
+    <div class="info-sm">Measure the black border</div>
+  </div>
+</div>
+<div class="tip">
+  <strong>Calibration label — ${widthMm} × ${heightMm} mm</strong><br>
+  Print this page and measure the outer black rectangle.<br>
+  Width should be <strong>${widthMm} mm</strong>, height should be <strong>${heightMm} mm</strong>.<br>
+  <em>In the print dialog: set Margins to <strong>None</strong> and uncheck Headers &amp; Footers.</em>
+</div>
+<script>window.print()</script>
 </body></html>`
 }

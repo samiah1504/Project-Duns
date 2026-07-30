@@ -36,6 +36,9 @@ export interface LabelTemplate {
   marginBottom: number
   marginLeft: number
   marginRight: number
+  // Paper size saved with the template so loading restores the exact canvas
+  paperWidthMm?: number
+  paperHeightMm?: number
   fields: LabelField[]
 }
 
