@@ -113,18 +113,31 @@ export interface Customer {
   created_at: string
 }
 
-export interface PurchaseOrder {
+export type POStatus =
+  | 'open' | 'ordered' | 'partially_received'
+  | 'received' | 'fully_received' | 'closed_discrepancy' | 'cancelled'
+
+export type POLineItemStatus =
+  | 'pending' | 'partially_received' | 'fully_received' | 'not_received' | 'short_supplied'
+
+export interface POReceivedDevice {
   id: string
-  po_number: string
-  supplier_id: string
-  date: string
-  shipping_cost: string
-  status: 'open' | 'received' | 'cancelled'
+  po_id: string
+  line_item_id: string
+  device_id?: string
+  imei: string
+  actual_brand?: string
+  actual_model_str?: string
+  actual_ram_str?: string
+  actual_storage_str?: string
+  actual_colour_str?: string
+  actual_grade?: string
+  actual_condition?: string
+  selling_price?: string | null
   received_by_user_id?: string
-  received_at?: string
+  received_at: string
   notes?: string
-  created_at: string
-  line_items: POLineItem[]
+  migrated?: boolean
 }
 
 export interface POLineItem {
@@ -138,12 +151,35 @@ export interface POLineItem {
   selling_price?: string | null
   part_id?: string
   quantity: number
+  received_qty: number
+  outstanding_qty: number
+  item_status: POLineItemStatus
+  discrepancy_notes?: string | null
   notes?: string
   brand?: string
   model_name_str?: string
   ram_str?: string
   storage_str?: string
   colour_str?: string
+  received_devices: POReceivedDevice[]
+}
+
+export interface PurchaseOrder {
+  id: string
+  po_number: string
+  supplier_id: string
+  date: string
+  shipping_cost: string
+  status: POStatus
+  status_label: string
+  received_by_user_id?: string
+  received_at?: string
+  notes?: string
+  created_at: string
+  created_by_user_id?: string
+  line_items: POLineItem[]
+  total_ordered: number
+  total_received: number
 }
 
 export interface DeviceWithModel extends Device {

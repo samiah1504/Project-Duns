@@ -61,8 +61,19 @@ export const adjustPartStock = (id: string, data: unknown) => api.post(`/parts/$
 export const getPurchaseOrders = (params?: Record<string, string>) => api.get('/purchase-orders', { params })
 export const getPurchaseOrder = (id: string) => api.get(`/purchase-orders/${id}`)
 export const createPurchaseOrder = (data: unknown) => api.post('/purchase-orders', data)
+export const updatePurchaseOrder = (id: string, data: unknown) => api.patch(`/purchase-orders/${id}`, data)
 export const receivePurchaseOrder = (id: string, data: unknown) => api.post(`/purchase-orders/${id}/receive`, data)
 export const getPODevices = (id: string) => api.get(`/purchase-orders/${id}/devices`)
+// PO line items
+export const addPOLineItem = (poId: string, data: unknown) => api.post(`/purchase-orders/${poId}/line-items`, data)
+export const updatePOLineItem = (poId: string, lineId: string, data: unknown) => api.patch(`/purchase-orders/${poId}/line-items/${lineId}`, data)
+export const deletePOLineItem = (poId: string, lineId: string) => api.delete(`/purchase-orders/${poId}/line-items/${lineId}`)
+// PO receiving
+export const receiveLineItem = (poId: string, lineId: string, data: unknown) => api.post(`/purchase-orders/${poId}/line-items/${lineId}/receive`, data)
+export const markLineItemNotReceived = (poId: string, lineId: string, data: unknown) => api.post(`/purchase-orders/${poId}/line-items/${lineId}/not-received`, data)
+export const closePOWithDiscrepancy = (poId: string, data: unknown) => api.post(`/purchase-orders/${poId}/close-discrepancy`, data)
+export const getPOReconciliation = (poId: string) => api.get(`/purchase-orders/${poId}/reconciliation`)
+export const getPOReconciliationSummary = () => api.get('/purchase-orders/reconciliation-summary')
 
 // Refurb Jobs
 export const getRefurbJobs = (params?: Record<string, string>) => api.get('/refurb-jobs', { params })

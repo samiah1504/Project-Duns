@@ -6,7 +6,10 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from app.models.purchase_order import PurchaseOrder, POLineItem, POStatus, POLineType
+from app.models.purchase_order import (
+    PurchaseOrder, POLineItem, POReceivedDevice,
+    POStatus, POLineType, POLineItemStatus
+)
 from app.models.device import Device, DeviceStatus, DeviceLocation, DeviceGrade
 from app.models.model import PhoneModel
 from app.models.part import Part
@@ -19,7 +22,6 @@ _INV_CHARSET = string.ascii_uppercase + string.digits
 
 
 async def generate_inventory_number(db: AsyncSession) -> str:
-    """Generate a unique, non-predictable inventory number like TDM-7K4P9X2Q."""
     while True:
         suffix = ''.join(secrets.choice(_INV_CHARSET) for _ in range(8))
         candidate = f"TDM-{suffix}"
@@ -48,7 +50,6 @@ async def _find_or_create_phone_model(
     storage: Optional[str],
     colour: Optional[str],
 ) -> PhoneModel:
-    """Find an existing PhoneModel or create one."""
     q = select(PhoneModel).where(
         PhoneModel.brand == brand,
         PhoneModel.model_name == model_name,
@@ -88,13 +89,15 @@ async def create_purchase_order(
         supplier_id=supplier_id,
         date=order_date or date.today(),
         shipping_cost=shipping_cost or Decimal("0.00"),
+        status=POStatus.ORDERED,
         notes=notes,
+        created_by_user_id=user_id,
     )
     db.add(po)
     await db.flush()
 
     for item_data in line_items_data:
-        # Resolve model_id: use explicit FK or find/create from inline fields
+        # Resolve model_id from inline fields if not provided
         model_id = item_data.model_id
         if not model_id and item_data.brand and item_data.model_name_str:
             pm = await _find_or_create_phone_model(
@@ -110,7 +113,7 @@ async def create_purchase_order(
         line = POLineItem(
             po_id=po.id,
             line_type=item_data.line_type,
-            imei=item_data.imei,
+            imei=None,              # IMEIs are captured at receive time in the new flow
             model_id=model_id,
             grade=item_data.grade,
             unit_cost=item_data.unit_cost,
@@ -123,64 +126,262 @@ async def create_purchase_order(
             ram_str=item_data.ram_str,
             storage_str=item_data.storage_str,
             colour_str=item_data.colour_str,
+            initial_status=item_data.initial_status,
+            item_status=POLineItemStatus.PENDING.value,
+            received_qty=0,
         )
         db.add(line)
 
-        # Auto-create device immediately for device lines
-        if item_data.line_type == POLineType.DEVICE and item_data.imei:
-            existing = await db.execute(select(Device).where(Device.imei == item_data.imei))
-            if existing.scalar_one_or_none():
-                raise ConflictError(f"IMEI {item_data.imei} already exists in inventory")
+    return po
 
-            if not model_id:
-                raise BadRequestError(f"Device line for IMEI {item_data.imei} is missing model info")
 
-            # Determine initial status and location from the condition field
-            condition = getattr(item_data, 'initial_status', None) or 'awaiting_refurb'
-            if condition == 'sellable':
-                init_status = DeviceStatus.SELLABLE
-                init_location = DeviceLocation.SALES_STOCK
-            elif condition == 'scrapped':
-                init_status = DeviceStatus.SCRAPPED
-                init_location = DeviceLocation.SCRAP
-            else:  # awaiting_refurb (default)
-                init_status = DeviceStatus.AWAITING_REFURB
-                init_location = DeviceLocation.INTAKE
+async def receive_line_item(
+    db: AsyncSession,
+    po_id: str,
+    line_item_id: str,
+    imei: str,
+    user_id: str,
+    actual_brand: Optional[str] = None,
+    actual_model_str: Optional[str] = None,
+    actual_ram_str: Optional[str] = None,
+    actual_storage_str: Optional[str] = None,
+    actual_colour_str: Optional[str] = None,
+    actual_grade: Optional[str] = None,
+    actual_condition: Optional[str] = "awaiting_refurb",
+    selling_price: Optional[object] = None,
+    notes: Optional[str] = None,
+) -> tuple[POReceivedDevice, Device]:
+    from decimal import Decimal
 
-            inv_num = await generate_inventory_number(db)
-            selling_price = getattr(item_data, 'selling_price', None)
-            device = Device(
-                imei=item_data.imei,
-                inventory_number=inv_num,
-                model_id=model_id,
-                grade=DeviceGrade(item_data.grade) if item_data.grade else DeviceGrade.C,
-                status=init_status,
-                location=init_location,
-                purchase_cost=item_data.unit_cost,
-                selling_price=selling_price,
-                selling_price_set_by=user_id if selling_price is not None else None,
-                selling_price_set_at=datetime.utcnow() if selling_price is not None else None,
-                purchase_order_id=po.id,
-                supplier_id=supplier_id,
-                date_received=date.today(),
+    # Validate PO and line item
+    po_result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
+    po = po_result.scalar_one_or_none()
+    if not po:
+        raise NotFoundError("Purchase order not found")
+
+    active_statuses = {"open", "ordered", "partially_received"}
+    if po.status not in (POStatus.OPEN, POStatus.ORDERED, POStatus.PARTIALLY_RECEIVED):
+        raise BadRequestError(f"PO is {po.status} — cannot receive more items")
+
+    li_result = await db.execute(
+        select(POLineItem).where(
+            POLineItem.id == line_item_id,
+            POLineItem.po_id == po_id,
+        )
+    )
+    line_item = li_result.scalar_one_or_none()
+    if not line_item:
+        raise NotFoundError("Line item not found on this PO")
+
+    if line_item.item_status == POLineItemStatus.NOT_RECEIVED.value:
+        raise BadRequestError("This line item has been marked as not received")
+
+    if (line_item.received_qty or 0) >= line_item.quantity:
+        raise BadRequestError(
+            f"Already received all {line_item.quantity} unit(s) for this line item"
+        )
+
+    # Check IMEI uniqueness in devices table AND po_received_devices
+    existing_device = await db.execute(select(Device).where(Device.imei == imei))
+    if existing_device.scalar_one_or_none():
+        raise ConflictError(f"IMEI {imei} already exists in inventory")
+
+    existing_received = await db.execute(
+        select(POReceivedDevice).where(POReceivedDevice.imei == imei)
+    )
+    if existing_received.scalar_one_or_none():
+        raise ConflictError(f"IMEI {imei} has already been received")
+
+    # Resolve effective values (fall back to line item if not overridden)
+    eff_brand = actual_brand or line_item.brand
+    eff_model = actual_model_str or line_item.model_name_str
+    eff_ram = actual_ram_str or line_item.ram_str
+    eff_storage = actual_storage_str or line_item.storage_str
+    eff_colour = actual_colour_str or line_item.colour_str
+    eff_grade = actual_grade or line_item.grade or "C"
+    eff_condition = actual_condition or line_item.initial_status or "awaiting_refurb"
+    eff_selling_price = selling_price if selling_price is not None else line_item.selling_price
+
+    # Resolve or create phone model
+    model_id = line_item.model_id
+    if not model_id and eff_brand and eff_model:
+        pm = await _find_or_create_phone_model(
+            db,
+            brand=eff_brand,
+            model_name=eff_model,
+            ram=eff_ram,
+            storage=eff_storage,
+            colour=eff_colour,
+        )
+        model_id = pm.id
+
+    if not model_id:
+        raise BadRequestError("Cannot create device: model information is required")
+
+    # Determine initial device status/location
+    if eff_condition == "sellable":
+        init_status = DeviceStatus.SELLABLE
+        init_location = DeviceLocation.SALES_STOCK
+    elif eff_condition == "scrapped":
+        init_status = DeviceStatus.SCRAPPED
+        init_location = DeviceLocation.SCRAP
+    else:
+        init_status = DeviceStatus.AWAITING_REFURB
+        init_location = DeviceLocation.INTAKE
+
+    # Create Device record
+    inv_num = await generate_inventory_number(db)
+    device = Device(
+        imei=imei,
+        inventory_number=inv_num,
+        model_id=model_id,
+        grade=DeviceGrade(eff_grade) if eff_grade in [g.value for g in DeviceGrade] else DeviceGrade.C,
+        status=init_status,
+        location=init_location,
+        purchase_cost=Decimal("0.00"),  # cost price entered separately by ADMIN/OPERATIONS
+        selling_price=eff_selling_price,
+        selling_price_set_by=user_id if eff_selling_price is not None else None,
+        selling_price_set_at=datetime.utcnow() if eff_selling_price is not None else None,
+        purchase_order_id=po_id,
+        supplier_id=po.supplier_id,
+        date_received=date.today(),
+    )
+    db.add(device)
+    await db.flush()
+
+    # Create POReceivedDevice record
+    received = POReceivedDevice(
+        po_id=po_id,
+        line_item_id=line_item_id,
+        device_id=device.id,
+        imei=imei,
+        actual_brand=eff_brand,
+        actual_model_str=eff_model,
+        actual_ram_str=eff_ram,
+        actual_storage_str=eff_storage,
+        actual_colour_str=eff_colour,
+        actual_grade=eff_grade,
+        actual_condition=eff_condition,
+        selling_price=eff_selling_price,
+        received_by_user_id=user_id,
+        received_at=datetime.utcnow(),
+        notes=notes,
+        migrated=False,
+    )
+    db.add(received)
+    await db.flush()
+
+    # Update line item counts and status
+    new_received = (line_item.received_qty or 0) + 1
+    line_item.received_qty = new_received
+    if new_received >= line_item.quantity:
+        line_item.item_status = POLineItemStatus.FULLY_RECEIVED.value
+    else:
+        line_item.item_status = POLineItemStatus.PARTIALLY_RECEIVED.value
+
+    # Write audit log
+    await write_audit(
+        db,
+        user_id=user_id,
+        device_id=device.id,
+        from_status=None,
+        to_status=init_status.value,
+        from_location=None,
+        to_location=init_location.value,
+        reference_type=ReferenceType.PO,
+        reference_id=po.po_number,
+        notes=f"Received via {po.po_number} — IMEI {imei}",
+    )
+
+    # Auto-update PO status
+    await _refresh_po_status(db, po)
+
+    return received, device
+
+
+async def mark_line_item_not_received(
+    db: AsyncSession,
+    po_id: str,
+    line_item_id: str,
+    notes: Optional[str] = None,
+) -> POLineItem:
+    li_result = await db.execute(
+        select(POLineItem).where(
+            POLineItem.id == line_item_id,
+            POLineItem.po_id == po_id,
+        )
+    )
+    line_item = li_result.scalar_one_or_none()
+    if not line_item:
+        raise NotFoundError("Line item not found")
+
+    if (line_item.received_qty or 0) > 0:
+        raise BadRequestError("Cannot mark as not received — some units already received")
+
+    line_item.item_status = POLineItemStatus.NOT_RECEIVED.value
+    if notes:
+        line_item.discrepancy_notes = notes
+
+    po_result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
+    po = po_result.scalar_one_or_none()
+    if po:
+        await _refresh_po_status(db, po)
+
+    return line_item
+
+
+async def _refresh_po_status(db: AsyncSession, po: PurchaseOrder) -> None:
+    """Recompute and save PO status based on all line item statuses."""
+    li_result = await db.execute(
+        select(POLineItem).where(POLineItem.po_id == po.id, POLineItem.line_type == POLineType.DEVICE)
+    )
+    lines = li_result.scalars().all()
+
+    if not lines:
+        return
+
+    total = sum(li.quantity for li in lines)
+    received = sum(li.received_qty or 0 for li in lines)
+    not_rcvd = sum(1 for li in lines if li.item_status == POLineItemStatus.NOT_RECEIVED.value)
+    short = sum(1 for li in lines if li.item_status == POLineItemStatus.SHORT_SUPPLIED.value)
+
+    if received == 0 and not_rcvd == 0:
+        po.status = POStatus.ORDERED
+    elif received >= total:
+        po.status = POStatus.FULLY_RECEIVED
+        po.received_at = datetime.utcnow()
+    elif received > 0 and (not_rcvd > 0 or short > 0):
+        # Some received, some explicitly closed short
+        all_closed = all(
+            li.item_status in (
+                POLineItemStatus.FULLY_RECEIVED.value,
+                POLineItemStatus.NOT_RECEIVED.value,
+                POLineItemStatus.SHORT_SUPPLIED.value,
             )
-            db.add(device)
-            await db.flush()
+            for li in lines
+        )
+        po.status = POStatus.CLOSED_DISCREPANCY if all_closed else POStatus.PARTIALLY_RECEIVED
+    elif received > 0:
+        po.status = POStatus.PARTIALLY_RECEIVED
+    else:
+        # All not-received
+        all_closed = all(li.item_status == POLineItemStatus.NOT_RECEIVED.value for li in lines)
+        po.status = POStatus.CLOSED_DISCREPANCY if all_closed else POStatus.ORDERED
 
-            if user_id:
-                await write_audit(
-                    db,
-                    user_id=user_id,
-                    device_id=device.id,
-                    from_status=None,
-                    to_status=init_status.value,
-                    from_location=None,
-                    to_location=init_location.value,
-                    reference_type=ReferenceType.PO,
-                    reference_id=po.po_number,
-                    notes=f"Received via PO {po.po_number} — condition: {condition}",
-                )
 
+async def close_po_with_discrepancy(
+    db: AsyncSession,
+    po_id: str,
+    notes: Optional[str] = None,
+) -> PurchaseOrder:
+    po_result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
+    po = po_result.scalar_one_or_none()
+    if not po:
+        raise NotFoundError("Purchase order not found")
+
+    po.status = POStatus.CLOSED_DISCREPANCY
+    if notes:
+        po.notes = (po.notes or "") + f"\nClosed: {notes}"
     return po
 
 
@@ -190,14 +391,15 @@ async def receive_purchase_order(
     user_id: str,
     notes: Optional[str] = None,
 ) -> PurchaseOrder:
+    """Legacy endpoint — kept for backwards compat. Marks whole PO received."""
     result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
     po = result.scalar_one_or_none()
     if not po:
         raise NotFoundError("Purchase order not found")
-    if po.status != POStatus.OPEN:
-        raise BadRequestError(f"PO is already {po.status.value}")
+    if po.status in (POStatus.FULLY_RECEIVED, POStatus.RECEIVED, POStatus.CANCELLED):
+        raise BadRequestError(f"PO is already {po.status}")
 
-    po.status = POStatus.RECEIVED
+    po.status = POStatus.FULLY_RECEIVED
     po.received_by_user_id = user_id
     po.received_at = datetime.utcnow()
     if notes:

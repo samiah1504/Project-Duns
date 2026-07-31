@@ -41,6 +41,7 @@ import app.models.expense       # noqa: F401 — registers Expense with Base.met
 import app.models.return_rma    # noqa: F401 — registers ReturnBatch with Base.metadata
 import app.models.label_template  # noqa: F401 — registers LabelTemplate with Base.metadata
 import app.models.price_change    # noqa: F401 — registers PriceChange with Base.metadata
+import app.models.purchase_order  # noqa: F401 — registers POReceivedDevice with Base.metadata
 
 
 @asynccontextmanager
@@ -80,6 +81,77 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS selling_price NUMERIC(10,2)",
             # Add OPERATIONS to userrole enum
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='OPERATIONS' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='userrole')) THEN ALTER TYPE userrole ADD VALUE 'OPERATIONS'; END IF; END $$",
+            # PO status expansion — add new enum values safely
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='ordered' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'ordered'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='partially_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'partially_received'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='fully_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'fully_received'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='closed_discrepancy' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'closed_discrepancy'; END IF; END $$",
+            # PO audit: who created it
+            "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)",
+            # POLineItem receiving tracking
+            "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS received_qty INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS item_status VARCHAR(30) NOT NULL DEFAULT 'pending'",
+            "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS discrepancy_notes TEXT",
+            # POReceivedDevice table — tracks actual received units per line item
+            """CREATE TABLE IF NOT EXISTS po_received_devices (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                po_id UUID NOT NULL REFERENCES purchase_orders(id),
+                line_item_id UUID NOT NULL REFERENCES po_line_items(id),
+                device_id UUID REFERENCES devices(id),
+                imei VARCHAR(20) NOT NULL,
+                actual_brand VARCHAR(100),
+                actual_model_str VARCHAR(100),
+                actual_ram_str VARCHAR(20),
+                actual_storage_str VARCHAR(50),
+                actual_colour_str VARCHAR(50),
+                actual_grade VARCHAR(5),
+                actual_condition VARCHAR(30),
+                selling_price NUMERIC(10,2),
+                received_by_user_id UUID REFERENCES users(id),
+                received_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                notes TEXT,
+                migrated BOOLEAN NOT NULL DEFAULT FALSE
+            )""",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_po_received_devices_imei ON po_received_devices (imei)",
+            # Data migration: link existing devices to received records (idempotent via ON CONFLICT)
+            """INSERT INTO po_received_devices
+                (id, po_id, line_item_id, device_id, imei, actual_brand, actual_model_str,
+                 actual_ram_str, actual_storage_str, actual_colour_str, actual_grade,
+                 actual_condition, selling_price, received_at, migrated)
+               SELECT
+                 gen_random_uuid(),
+                 d.purchase_order_id,
+                 li.id,
+                 d.id,
+                 d.imei,
+                 li.brand,
+                 li.model_name_str,
+                 li.ram_str,
+                 li.storage_str,
+                 li.colour_str,
+                 li.grade,
+                 COALESCE(li.initial_status, 'awaiting_refurb'),
+                 COALESCE(li.selling_price, d.selling_price),
+                 COALESCE(d.date_received::timestamp, NOW()),
+                 TRUE
+               FROM devices d
+               JOIN po_line_items li ON li.po_id = d.purchase_order_id AND li.imei = d.imei
+               WHERE d.purchase_order_id IS NOT NULL
+               ON CONFLICT (imei) DO NOTHING""",
+            # Update received_qty on line items that have received devices
+            """UPDATE po_line_items li
+               SET received_qty = sub.cnt,
+                   item_status = CASE WHEN sub.cnt >= li.quantity THEN 'fully_received' ELSE 'partially_received' END
+               FROM (SELECT line_item_id, COUNT(*) AS cnt FROM po_received_devices GROUP BY line_item_id) sub
+               WHERE li.id = sub.line_item_id AND li.received_qty = 0""",
+            # Fix selling_price on existing devices from their line items
+            """UPDATE devices d
+               SET selling_price = prd.selling_price,
+                   selling_price_set_at = prd.received_at
+               FROM po_received_devices prd
+               WHERE prd.device_id = d.id
+               AND d.selling_price IS NULL
+               AND prd.selling_price IS NOT NULL""",
             # Price changes audit table
             """CREATE TABLE IF NOT EXISTS price_changes (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
