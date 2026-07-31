@@ -17,6 +17,7 @@ const NAV = [
   { to: '/phone-models', label: 'Phone Models', module: 'phone_models' },
   { to: '/suppliers', label: 'Suppliers', module: 'suppliers' },
   { to: '/users', label: 'Users', module: 'users' },
+  { to: '/cost-price', label: '₦ Cost Price Mgmt', module: 'cost_price' },
   { to: '/label-designer', label: '🏷 Label Designer', module: 'settings' },
   { to: '/settings', label: '⚙ Settings', module: 'settings' },
 ]

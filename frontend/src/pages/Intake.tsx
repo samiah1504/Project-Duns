@@ -89,7 +89,7 @@ function PODevicesPanel({ poId, poNumber }: { poId: string; poNumber: string }) 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-            {['IMEI', 'Model', 'RAM', 'ROM', 'Colour', 'Grade', 'Cost', 'Status', ''].map(h => (
+            {['IMEI', 'Model', 'RAM', 'ROM', 'Colour', 'Grade', 'Selling Price', 'Status', ''].map(h => (
               <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: '#64748b', fontSize: 11, fontWeight: 600 }}>{h}</th>
             ))}
           </tr>
@@ -103,7 +103,12 @@ function PODevicesPanel({ poId, poNumber }: { poId: string; poNumber: string }) 
               <td style={{ padding: '6px 8px' }}>{d.model?.storage ?? '—'}</td>
               <td style={{ padding: '6px 8px' }}>{d.model?.colour ?? '—'}</td>
               <td style={{ padding: '6px 8px' }}><strong>{d.grade}</strong></td>
-              <td style={{ padding: '6px 8px' }}>{fmt(d.purchase_cost)}</td>
+              <td style={{ padding: '6px 8px' }}>
+                {d.selling_price
+                  ? fmt(d.selling_price)
+                  : <span style={{ color: '#d97706', fontSize: 11, fontWeight: 600 }}>Price Required</span>
+                }
+              </td>
               <td style={{ padding: '6px 8px' }}>
                 <span style={{
                   fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 3,
@@ -149,7 +154,7 @@ interface LineItem {
   grade: string
   initial_status: string
   imei: string
-  unit_cost: string
+  selling_price: string
   imeiError: string
 }
 
@@ -159,7 +164,7 @@ const emptyLine = (): LineItem => ({
   storage_str: '', rom_custom: '',
   colour_str: '',
   grade: 'C', initial_status: 'awaiting_refurb',
-  imei: '', unit_cost: '',
+  imei: '', selling_price: '',
   imeiError: '',
 })
 
@@ -245,6 +250,9 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
     const missingFields = validLines.filter(l => !l.colour_str.trim())
     if (missingFields.length) { toast.error('Colour is required for all devices'); return }
 
+    const missingSP = validLines.filter(l => !l.selling_price || parseFloat(l.selling_price) <= 0)
+    if (missingSP.length) { toast.error('Selling price is required for all devices'); return }
+
     mut.mutate({
       supplier_id: supplierId,
       shipping_cost: parseFloat(shippingCost) || 0,
@@ -259,7 +267,8 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
         grade: l.grade,
         initial_status: l.initial_status,
         imei: l.imei.trim(),
-        unit_cost: parseFloat(l.unit_cost) || 0,
+        unit_cost: 0,
+        selling_price: parseFloat(l.selling_price) || 0,
       })),
     })
   }
@@ -387,8 +396,8 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
                   </Field>
                 </div>
 
-                {/* Row 3: Grade, Condition, Cost, Remove */}
-                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 160px auto', gap: 12, alignItems: 'end' }}>
+                {/* Row 3: Grade, Condition, Selling Price, Remove */}
+                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 180px auto', gap: 12, alignItems: 'end' }}>
                   <Field label="Grade">
                     <select value={line.grade} onChange={e => updateLine(i, { grade: e.target.value })} style={fieldStyle}>
                       {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
@@ -405,16 +414,22 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
                       ))}
                     </select>
                   </Field>
-                  <Field label="Cost (₦) *">
+                  <Field label="Selling Price (₦) *">
                     <input
                       placeholder="0.00"
                       type="number"
-                      value={line.unit_cost}
-                      onChange={e => updateLine(i, { unit_cost: e.target.value })}
-                      style={fieldStyle}
+                      value={line.selling_price}
+                      onChange={e => updateLine(i, { selling_price: e.target.value })}
+                      style={{
+                        ...fieldStyle,
+                        borderColor: !line.selling_price || parseFloat(line.selling_price) <= 0 ? '#f59e0b' : '#d1d5db',
+                      }}
                       min="0"
                       step="0.01"
                     />
+                    {(!line.selling_price || parseFloat(line.selling_price) <= 0) && (
+                      <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>Required before sale</div>
+                    )}
                   </Field>
                   <div style={{ paddingBottom: 2 }}>
                     <button

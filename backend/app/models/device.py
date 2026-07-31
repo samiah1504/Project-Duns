@@ -70,6 +70,15 @@ class Device(Base):
         UUID(as_uuid=False), ForeignKey("sales.id"), nullable=True
     )
     sale_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    selling_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    selling_price_set_by: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
+    )
+    selling_price_set_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cost_price_updated_by: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
+    )
+    cost_price_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     warranty_expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

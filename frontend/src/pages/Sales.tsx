@@ -138,7 +138,7 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
       setImeiError(`IMEI ${imei} not found in sales stock`); return
     }
     const model = phoneModels.find(m => m.id === device.model_id)
-    setLineItems(prev => [...prev, { device, model, unit_price: '' }])
+    setLineItems(prev => [...prev, { device, model, unit_price: device.selling_price ? String(parseFloat(device.selling_price)) : '' }])
     setImeiInput('')
     setTimeout(() => imeiRef.current?.focus(), 50)
   }

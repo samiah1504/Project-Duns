@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'INVENTORY' | 'SALES' | 'ENGINEER' | 'RECORDS'
+export type UserRole = 'ADMIN' | 'OPERATIONS' | 'INVENTORY' | 'SALES' | 'ENGINEER' | 'RECORDS'
 
 export interface User {
   id: string
@@ -36,10 +36,14 @@ export interface Device {
   status: DeviceStatus
   location: DeviceLocation
   custody_user_id?: string
-  purchase_cost: string
-  parts_cost: string
-  external_cost: string
-  total_cost: string
+  purchase_cost?: string | null    // null when hidden from caller's role
+  parts_cost?: string | null
+  external_cost?: string | null
+  total_cost?: string | null
+  selling_price?: string | null
+  selling_price_set_by?: string | null
+  selling_price_set_at?: string | null
+  selling_price_status?: 'set' | 'required'
   purchase_order_id?: string
   supplier_id?: string
   date_received?: string
@@ -49,6 +53,20 @@ export interface Device {
   notes?: string
   created_at: string
   updated_at: string
+}
+
+export interface PriceChange {
+  id: string
+  device_id: string
+  imei: string
+  user_id: string
+  user_role: string
+  field: string
+  old_value?: string | null
+  new_value?: string | null
+  action: string
+  notes?: string | null
+  timestamp: string
 }
 
 export interface PhoneModel {
@@ -117,6 +135,7 @@ export interface POLineItem {
   model_id?: string
   grade?: string
   unit_cost: string
+  selling_price?: string | null
   part_id?: string
   quantity: number
   notes?: string

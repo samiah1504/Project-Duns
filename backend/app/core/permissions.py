@@ -26,21 +26,25 @@ def admin_only():
     return require_roles("ADMIN")
 
 
+def admin_or_operations():
+    return require_roles("ADMIN", "OPERATIONS")
+
+
 def inventory_or_admin():
-    return require_roles("ADMIN", "INVENTORY")
+    return require_roles("ADMIN", "OPERATIONS", "INVENTORY")
 
 
 def sales_or_admin():
-    return require_roles("ADMIN", "SALES")
+    return require_roles("ADMIN", "OPERATIONS", "SALES")
 
 
 def engineer_or_admin():
-    return require_roles("ADMIN", "ENGINEER")
+    return require_roles("ADMIN", "OPERATIONS", "ENGINEER")
 
 
 def records_or_admin():
-    return require_roles("ADMIN", "RECORDS")
+    return require_roles("ADMIN", "OPERATIONS", "RECORDS")
 
 
 def any_authenticated():
-    return require_roles("ADMIN", "INVENTORY", "SALES", "ENGINEER", "RECORDS")
+    return require_roles("ADMIN", "OPERATIONS", "INVENTORY", "SALES", "ENGINEER", "RECORDS")

@@ -5,6 +5,9 @@ from pydantic import BaseModel
 
 from app.models.device import DeviceStatus, DeviceGrade, DeviceLocation
 
+# Roles that are allowed to see cost price
+COST_PRICE_ROLES = {"ADMIN", "OPERATIONS"}
+
 
 class DeviceCreate(BaseModel):
     imei: str
@@ -32,6 +35,11 @@ class DeviceTransfer(BaseModel):
     notes: Optional[str] = None
 
 
+class CostPriceUpdate(BaseModel):
+    purchase_cost: Decimal
+    notes: Optional[str] = None
+
+
 class DeviceOut(BaseModel):
     id: str
     imei: str
@@ -41,10 +49,14 @@ class DeviceOut(BaseModel):
     status: DeviceStatus
     location: DeviceLocation
     custody_user_id: Optional[str] = None
-    purchase_cost: Decimal
-    parts_cost: Decimal
-    external_cost: Decimal
-    total_cost: Decimal
+    purchase_cost: Optional[Decimal] = None  # None when hidden from caller
+    parts_cost: Optional[Decimal] = None
+    external_cost: Optional[Decimal] = None
+    total_cost: Optional[Decimal] = None
+    selling_price: Optional[Decimal] = None
+    selling_price_set_by: Optional[str] = None
+    selling_price_set_at: Optional[datetime] = None
+    selling_price_status: Optional[str] = None  # 'set' | 'required'
     purchase_order_id: Optional[str] = None
     supplier_id: Optional[str] = None
     date_received: Optional[date] = None
@@ -56,3 +68,58 @@ class DeviceOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PriceChangeOut(BaseModel):
+    id: str
+    device_id: str
+    imei: str
+    user_id: str
+    user_role: str
+    field: str
+    old_value: Optional[Decimal] = None
+    new_value: Optional[Decimal] = None
+    action: str
+    notes: Optional[str] = None
+    timestamp: datetime
+
+    model_config = {"from_attributes": True}
+
+
+def device_to_out(device, viewer_role: str) -> dict:
+    """Build DeviceOut dict, masking cost fields for non-privileged roles."""
+    show_cost = viewer_role in COST_PRICE_ROLES
+    d = {
+        "id": device.id,
+        "imei": device.imei,
+        "inventory_number": device.inventory_number,
+        "model_id": device.model_id,
+        "grade": device.grade,
+        "status": device.status,
+        "location": device.location,
+        "custody_user_id": device.custody_user_id,
+        "selling_price": device.selling_price,
+        "selling_price_set_by": device.selling_price_set_by,
+        "selling_price_set_at": device.selling_price_set_at,
+        "selling_price_status": "set" if device.selling_price is not None else "required",
+        "purchase_order_id": device.purchase_order_id,
+        "supplier_id": device.supplier_id,
+        "date_received": device.date_received,
+        "sale_id": device.sale_id,
+        "sale_price": device.sale_price,
+        "warranty_expiry": device.warranty_expiry,
+        "notes": device.notes,
+        "created_at": device.created_at,
+        "updated_at": device.updated_at,
+    }
+    if show_cost:
+        d["purchase_cost"] = device.purchase_cost
+        d["parts_cost"] = device.parts_cost
+        d["external_cost"] = device.external_cost
+        d["total_cost"] = device.total_cost
+    else:
+        d["purchase_cost"] = None
+        d["parts_cost"] = None
+        d["external_cost"] = None
+        d["total_cost"] = None
+    return d

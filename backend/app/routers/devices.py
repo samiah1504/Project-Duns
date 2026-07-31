@@ -1,21 +1,27 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import Optional
+from typing import Optional, List
 
 from app.database import get_db
 from app.models.device import Device, DeviceStatus, DeviceLocation
 from app.models.audit_log import AuditLog
-from app.schemas.device import DeviceCreate, DeviceUpdate, DeviceTransfer, DeviceOut
+from app.models.price_change import PriceChange
+from app.schemas.device import (
+    DeviceCreate, DeviceUpdate, DeviceTransfer, DeviceOut,
+    CostPriceUpdate, PriceChangeOut, device_to_out,
+)
 from app.schemas.audit_log import AuditLogOut
 from app.core.auth import get_current_user
-from app.core.permissions import inventory_or_admin, any_authenticated
-from app.core.exceptions import NotFoundError, ConflictError
+from app.core.permissions import inventory_or_admin, any_authenticated, admin_or_operations
+from app.core.exceptions import NotFoundError, ConflictError, ForbiddenError
 from app.services.device_state_machine import validate_transition
 from app.services.audit import write_audit
 from app.services.intake import generate_inventory_number
 from app.models.audit_log import ReferenceType
 from app.models.user import User
+from decimal import Decimal
 
 router = APIRouter()
 
@@ -27,7 +33,7 @@ async def list_devices(
     model_id: Optional[str] = None,
     imei: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(any_authenticated()),
+    current_user: User = Depends(any_authenticated()),
 ):
     q = select(Device)
     if status:
@@ -39,7 +45,8 @@ async def list_devices(
     if imei:
         q = q.where(Device.imei.ilike(f"%{imei}%"))
     result = await db.execute(q.order_by(Device.created_at.desc()))
-    return result.scalars().all()
+    devices = result.scalars().all()
+    return [device_to_out(d, current_user.role.value) for d in devices]
 
 
 @router.get("/sellable", response_model=list[DeviceOut])
@@ -47,7 +54,7 @@ async def list_sellable_devices(
     model_id: Optional[str] = None,
     imei: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(any_authenticated()),
+    current_user: User = Depends(any_authenticated()),
 ):
     """Only SELLABLE devices in SALES_STOCK — the safe counter view."""
     q = select(Device).where(
@@ -59,7 +66,22 @@ async def list_sellable_devices(
     if imei:
         q = q.where(Device.imei.ilike(f"%{imei}%"))
     result = await db.execute(q.order_by(Device.model_id))
-    return result.scalars().all()
+    devices = result.scalars().all()
+    return [device_to_out(d, current_user.role.value) for d in devices]
+
+
+@router.get("/pending-cost-entry", response_model=list[DeviceOut])
+async def list_pending_cost_entry(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(admin_or_operations()),
+):
+    """Devices that have no cost price set — visible to ADMIN/OPERATIONS only."""
+    q = select(Device).where(
+        (Device.purchase_cost == None) | (Device.purchase_cost == Decimal("0.00"))
+    )
+    result = await db.execute(q.order_by(Device.created_at.desc()))
+    devices = result.scalars().all()
+    return [device_to_out(d, current_user.role.value) for d in devices]
 
 
 @router.post("", response_model=DeviceOut, status_code=201)
@@ -86,33 +108,33 @@ async def create_device(
     )
     await db.commit()
     await db.refresh(device)
-    return device
+    return device_to_out(device, current_user.role.value)
 
 
 @router.get("/by-inventory/{inv_num}", response_model=DeviceOut)
 async def get_device_by_inventory_number(
     inv_num: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(any_authenticated()),
+    current_user: User = Depends(any_authenticated()),
 ):
     result = await db.execute(select(Device).where(Device.inventory_number == inv_num))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with inventory number {inv_num} not found")
-    return device
+    return device_to_out(device, current_user.role.value)
 
 
 @router.get("/{imei}", response_model=DeviceOut)
 async def get_device(
     imei: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(any_authenticated()),
+    current_user: User = Depends(any_authenticated()),
 ):
     result = await db.execute(select(Device).where(Device.imei == imei))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with IMEI {imei} not found")
-    return device
+    return device_to_out(device, current_user.role.value)
 
 
 @router.patch("/{imei}", response_model=DeviceOut)
@@ -130,7 +152,61 @@ async def update_device(
         setattr(device, field, value)
     await db.commit()
     await db.refresh(device)
-    return device
+    return device_to_out(device, current_user.role.value)
+
+
+@router.patch("/{imei}/cost-price", response_model=DeviceOut)
+async def update_cost_price(
+    imei: str,
+    body: CostPriceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(admin_or_operations()),
+):
+    """Update cost price for a device — ADMIN/OPERATIONS only. Writes audit trail."""
+    result = await db.execute(select(Device).where(Device.imei == imei))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise NotFoundError(f"Device with IMEI {imei} not found")
+
+    old_value = device.purchase_cost
+    device.purchase_cost = body.purchase_cost
+    device.cost_price_updated_by = current_user.id
+    device.cost_price_updated_at = datetime.utcnow()
+
+    log = PriceChange(
+        device_id=device.id,
+        imei=device.imei,
+        user_id=current_user.id,
+        user_role=current_user.role.value,
+        field="purchase_cost",
+        old_value=old_value,
+        new_value=body.purchase_cost,
+        action="update" if old_value and old_value != Decimal("0.00") else "set",
+        notes=body.notes,
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(device)
+    return device_to_out(device, current_user.role.value)
+
+
+@router.get("/{imei}/price-history", response_model=list[PriceChangeOut])
+async def get_price_history(
+    imei: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(admin_or_operations()),
+):
+    """Price change audit trail — ADMIN/OPERATIONS only."""
+    result = await db.execute(select(Device).where(Device.imei == imei))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise NotFoundError(f"Device with IMEI {imei} not found")
+    logs = await db.execute(
+        select(PriceChange)
+        .where(PriceChange.device_id == device.id)
+        .order_by(PriceChange.timestamp.desc())
+    )
+    return logs.scalars().all()
 
 
 @router.post("/{imei}/transfer", response_model=DeviceOut)
@@ -167,7 +243,7 @@ async def transfer_device(
     )
     await db.commit()
     await db.refresh(device)
-    return device
+    return device_to_out(device, current_user.role.value)
 
 
 @router.get("/{imei}/history", response_model=list[AuditLogOut])

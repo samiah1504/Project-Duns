@@ -69,6 +69,7 @@ class POLineItem(Base):
     )
     grade: Mapped[str | None] = mapped_column(String(5), nullable=True)
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    selling_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     part_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("parts.id"), nullable=True
     )

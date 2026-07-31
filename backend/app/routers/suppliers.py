@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierCreate, SupplierUpdate, SupplierOut
-from app.core.permissions import inventory_or_admin, any_authenticated
+from app.core.permissions import admin_or_operations, any_authenticated
 from app.core.exceptions import NotFoundError
 from app.models.user import User
 
@@ -30,7 +30,7 @@ async def list_suppliers(
 async def create_supplier(
     body: SupplierCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(inventory_or_admin()),
+    _: User = Depends(admin_or_operations()),
 ):
     supplier = Supplier(**body.model_dump())
     db.add(supplier)
@@ -57,7 +57,7 @@ async def update_supplier(
     supplier_id: str,
     body: SupplierUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(inventory_or_admin()),
+    _: User = Depends(admin_or_operations()),
 ):
     result = await db.execute(select(Supplier).where(Supplier.id == supplier_id))
     supplier = result.scalar_one_or_none()

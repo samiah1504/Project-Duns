@@ -43,6 +43,9 @@ export const createDevice = (data: unknown) => api.post('/devices', data)
 export const updateDevice = (imei: string, data: unknown) => api.patch(`/devices/${imei}`, data)
 export const transferDevice = (imei: string, data: unknown) => api.post(`/devices/${imei}/transfer`, data)
 export const getDeviceHistory = (imei: string) => api.get(`/devices/${imei}/history`)
+export const updateCostPrice = (imei: string, data: unknown) => api.patch(`/devices/${imei}/cost-price`, data)
+export const getDevicePriceHistory = (imei: string) => api.get(`/devices/${imei}/price-history`)
+export const getPendingCostEntry = () => api.get('/devices/pending-cost-entry')
 
 // Phone Models
 export const getPhoneModels = () => api.get('/phone-models')

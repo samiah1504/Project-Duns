@@ -19,6 +19,7 @@ class POLineItemCreate(BaseModel):
     grade: Optional[str] = "C"
     initial_status: Optional[str] = "awaiting_refurb"  # awaiting_refurb | sellable | scrapped
     unit_cost: Decimal = Decimal("0.00")
+    selling_price: Optional[Decimal] = None  # set by INVENTORY at intake
     # Part fields
     part_id: Optional[str] = None
     quantity: int = 1
@@ -34,6 +35,7 @@ class POLineItemOut(BaseModel):
     grade: Optional[str] = None
     initial_status: Optional[str] = None
     unit_cost: Decimal
+    selling_price: Optional[Decimal] = None
     part_id: Optional[str] = None
     quantity: int
     notes: Optional[str] = None

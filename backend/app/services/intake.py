@@ -114,6 +114,7 @@ async def create_purchase_order(
             model_id=model_id,
             grade=item_data.grade,
             unit_cost=item_data.unit_cost,
+            selling_price=getattr(item_data, 'selling_price', None),
             part_id=item_data.part_id,
             quantity=item_data.quantity,
             notes=item_data.notes,
@@ -147,6 +148,7 @@ async def create_purchase_order(
                 init_location = DeviceLocation.INTAKE
 
             inv_num = await generate_inventory_number(db)
+            selling_price = getattr(item_data, 'selling_price', None)
             device = Device(
                 imei=item_data.imei,
                 inventory_number=inv_num,
@@ -155,6 +157,9 @@ async def create_purchase_order(
                 status=init_status,
                 location=init_location,
                 purchase_cost=item_data.unit_cost,
+                selling_price=selling_price,
+                selling_price_set_by=user_id if selling_price is not None else None,
+                selling_price_set_at=datetime.utcnow() if selling_price is not None else None,
                 purchase_order_id=po.id,
                 supplier_id=supplier_id,
                 date_received=date.today(),

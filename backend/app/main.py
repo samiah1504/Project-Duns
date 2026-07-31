@@ -40,6 +40,7 @@ import app.models.sale_payment  # noqa: F401 — registers SalePayment with Base
 import app.models.expense       # noqa: F401 — registers Expense with Base.metadata
 import app.models.return_rma    # noqa: F401 — registers ReturnBatch with Base.metadata
 import app.models.label_template  # noqa: F401 — registers LabelTemplate with Base.metadata
+import app.models.price_change    # noqa: F401 — registers PriceChange with Base.metadata
 
 
 @asynccontextmanager
@@ -68,6 +69,31 @@ async def lifespan(app: FastAPI):
             # Inventory number for barcode system
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS inventory_number VARCHAR(20)",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_devices_inventory_number ON devices (inventory_number) WHERE inventory_number IS NOT NULL",
+            # Selling price fields on devices (set at intake by INVENTORY)
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS selling_price NUMERIC(10,2)",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS selling_price_set_by UUID REFERENCES users(id)",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS selling_price_set_at TIMESTAMP",
+            # Cost price audit fields on devices (set by ADMIN/OPERATIONS)
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS cost_price_updated_by UUID REFERENCES users(id)",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS cost_price_updated_at TIMESTAMP",
+            # Selling price on PO line items
+            "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS selling_price NUMERIC(10,2)",
+            # Add OPERATIONS to userrole enum
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='OPERATIONS' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='userrole')) THEN ALTER TYPE userrole ADD VALUE 'OPERATIONS'; END IF; END $$",
+            # Price changes audit table
+            """CREATE TABLE IF NOT EXISTS price_changes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                device_id UUID NOT NULL REFERENCES devices(id),
+                imei VARCHAR(20) NOT NULL,
+                user_id UUID NOT NULL REFERENCES users(id),
+                user_role VARCHAR(30) NOT NULL,
+                field VARCHAR(50) NOT NULL,
+                old_value NUMERIC(10,2),
+                new_value NUMERIC(10,2),
+                action VARCHAR(30) NOT NULL,
+                notes TEXT,
+                timestamp TIMESTAMP NOT NULL DEFAULT NOW()
+            )""",
             # Bulk returns / batch RMA
             """CREATE TABLE IF NOT EXISTS return_batches (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

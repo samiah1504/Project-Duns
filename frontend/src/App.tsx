@@ -23,6 +23,7 @@ import Settings from './pages/Settings'
 import LabelDesigner from './pages/LabelDesigner'
 import SaleDetail from './pages/SaleDetail'
 import Expenses from './pages/Expenses'
+import CostPriceManagement from './pages/CostPriceManagement'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } })
 
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/phone-models" element={<ProtectedLayout><PhoneModels /></ProtectedLayout>} />
             <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
             <Route path="/label-designer" element={<ProtectedLayout><LabelDesigner /></ProtectedLayout>} />
+            <Route path="/cost-price" element={<ProtectedLayout><CostPriceManagement /></ProtectedLayout>} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useContext } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { getSuppliers, createSupplier, updateSupplier } from '../services/api'
 import { Supplier } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select } from '../components/Layout'
+import { AuthContext } from '../hooks/useAuth'
 
 type SupplierForm = {
   name: string
@@ -22,7 +23,11 @@ const empty: SupplierForm = {
   bank_name: '', account_number: '', account_name: '', notes: '',
 }
 
+const CAN_MANAGE_ROLES = ['ADMIN', 'OPERATIONS']
+
 export default function Suppliers() {
+  const { user } = useContext(AuthContext)
+  const canManage = CAN_MANAGE_ROLES.includes(user?.role ?? '')
   const qc = useQueryClient()
   const [showNew, setShowNew] = useState(false)
   const [editing, setEditing] = useState<Supplier | null>(null)
@@ -88,7 +93,13 @@ export default function Suppliers() {
 
   return (
     <div style={{ padding: 28 }}>
-      <PageHeader title="Suppliers & Vendors" action={<Btn onClick={openNew}>+ Add Supplier</Btn>} />
+      <PageHeader title="Suppliers & Vendors" action={
+        canManage
+          ? <Btn onClick={openNew}>+ Add Supplier</Btn>
+          : <span style={{ fontSize: 12, color: '#92400e', background: '#fef3c7', padding: '6px 12px', borderRadius: 6, border: '1px solid #fde68a' }}>
+              View only — contact Admin or Operations to add suppliers
+            </span>
+      } />
 
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
@@ -128,7 +139,7 @@ export default function Suppliers() {
               </TD>
               <TD style={{ color: '#94a3b8', fontSize: 12 }}>{s.notes ?? '—'}</TD>
               <TD>
-                <Btn size="sm" variant="secondary" onClick={() => openEdit(s)}>Edit</Btn>
+                {canManage && <Btn size="sm" variant="secondary" onClick={() => openEdit(s)}>Edit</Btn>}
               </TD>
             </TR>
           ))}
