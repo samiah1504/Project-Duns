@@ -296,6 +296,11 @@ async def receive_line_item(
     # Auto-update PO status
     await _refresh_po_status(db, po)
 
+    # Auto-create refurb job for devices received as awaiting refurbishment
+    if init_status == DeviceStatus.AWAITING_REFURB:
+        from app.services.refurb import ensure_refurb_job
+        await ensure_refurb_job(db, device.id, user_id)
+
     return received, device
 
 

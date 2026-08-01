@@ -14,6 +14,29 @@ class RefurbJobCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class AssignEngineerRequest(BaseModel):
+    engineer_id: str
+    fault_description: Optional[str] = None
+
+
+class CompleteRefurbRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class QCPassRequest(BaseModel):
+    new_grade: Optional[DeviceGrade] = None
+    notes: Optional[str] = None
+
+
+class QCFailRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class ReturnToEngineerRequest(BaseModel):
+    engineer_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class RefurbJobPartAdd(BaseModel):
     part_id: str
     quantity: int = 1
@@ -55,6 +78,7 @@ class RefurbJobOut(BaseModel):
     external_vendor_id: Optional[str] = None
     external_cost: Decimal
     notes: Optional[str] = None
+    auto_created: bool = False
     created_at: datetime
     parts_used: List[RefurbJobPartOut] = []
 

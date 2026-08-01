@@ -80,7 +80,15 @@ export const getRefurbJobs = (params?: Record<string, string>) => api.get('/refu
 export const getRefurbJob = (id: string) => api.get(`/refurb-jobs/${id}`)
 export const createRefurbJob = (data: unknown) => api.post('/refurb-jobs', data)
 export const addPartsToJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/add-parts`, data)
+export const assignEngineerToJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/assign`, data)
+export const completeRefurbJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/complete`, data)
+export const passQCJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/qc-pass`, data)
+export const failQCJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/qc-fail`, data)
+export const returnToEngineerJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/return-to-engineer`, data)
 export const closeRefurbJob = (id: string, data: unknown) => api.post(`/refurb-jobs/${id}/close`, data)
+
+// Device counts for dashboard
+export const getDeviceDashboardCounts = () => api.get('/devices/dashboard-counts')
 
 // Sales
 export const getSales = (params?: Record<string, string>) => api.get('/sales', { params })

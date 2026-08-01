@@ -13,6 +13,8 @@ from app.database import Base
 class JobStatus(str, enum.Enum):
     OPEN = "open"
     IN_PROGRESS = "in_progress"
+    AWAITING_QC = "awaiting_qc"
+    QC_FAILED = "qc_failed"
     CLOSED = "closed"
 
 
@@ -47,6 +49,7 @@ class RefurbJob(Base):
     )
     external_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auto_created: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     device: Mapped["Device"] = relationship("Device", back_populates="refurb_jobs")

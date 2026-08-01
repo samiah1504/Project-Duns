@@ -13,12 +13,16 @@ from app.database import Base
 class DeviceStatus(str, enum.Enum):
     AWAITING_REFURB = "AWAITING_REFURB"
     IN_REFURB = "IN_REFURB"
+    AWAITING_QC = "AWAITING_QC"
+    FAILED_QC = "FAILED_QC"
     SENT_EXTERNAL = "SENT_EXTERNAL"
     SCRAPPED = "SCRAPPED"
     SELLABLE = "SELLABLE"
     RESERVED = "RESERVED"
     SOLD = "SOLD"
     RETURNED = "RETURNED"
+    STOCK_TO_RETURN = "STOCK_TO_RETURN"
+    HARVESTED = "HARVESTED"
 
 
 class DeviceGrade(str, enum.Enum):
@@ -33,6 +37,7 @@ class DeviceLocation(str, enum.Enum):
     SALES_STOCK = "SALES_STOCK"
     EXTERNAL = "EXTERNAL"
     SCRAP = "SCRAP"
+    QC = "QC"
 
 
 class Device(Base):

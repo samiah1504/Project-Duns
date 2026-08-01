@@ -15,6 +15,7 @@ from app.schemas.device import (
 from app.schemas.audit_log import AuditLogOut
 from app.core.auth import get_current_user
 from app.core.permissions import inventory_or_admin, any_authenticated, admin_or_operations
+from app.models.user import UserRole
 from app.core.exceptions import NotFoundError, ConflictError, ForbiddenError
 from app.services.device_state_machine import validate_transition
 from app.services.audit import write_audit
@@ -36,7 +37,10 @@ async def list_devices(
     current_user: User = Depends(any_authenticated()),
 ):
     q = select(Device)
-    if status:
+    # SALES role sees only sellable stock (backend enforcement)
+    if current_user.role == UserRole.SALES and not status:
+        q = q.where(Device.status == DeviceStatus.SELLABLE)
+    elif status:
         q = q.where(Device.status == status)
     if location:
         q = q.where(Device.location == location)
@@ -47,6 +51,35 @@ async def list_devices(
     result = await db.execute(q.order_by(Device.created_at.desc()))
     devices = result.scalars().all()
     return [device_to_out(d, current_user.role.value) for d in devices]
+
+
+@router.get("/dashboard-counts")
+async def dashboard_counts(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(any_authenticated()),
+):
+    """Return per-status device counts for the dashboard."""
+    from sqlalchemy import func as sqlfunc
+    result = await db.execute(
+        select(Device.status, sqlfunc.count(Device.id).label("cnt"))
+        .group_by(Device.status)
+    )
+    rows = result.all()
+    counts = {r.status.value: r.cnt for r in rows}
+    return {
+        "all": sum(counts.values()),
+        "awaiting_refurb": counts.get("AWAITING_REFURB", 0),
+        "in_refurb": counts.get("IN_REFURB", 0),
+        "awaiting_qc": counts.get("AWAITING_QC", 0),
+        "failed_qc": counts.get("FAILED_QC", 0),
+        "sellable": counts.get("SELLABLE", 0),
+        "reserved": counts.get("RESERVED", 0),
+        "sold": counts.get("SOLD", 0),
+        "returned": counts.get("RETURNED", 0),
+        "stock_to_return": counts.get("STOCK_TO_RETURN", 0),
+        "harvested": counts.get("HARVESTED", 0),
+        "scrapped": counts.get("SCRAPPED", 0),
+    }
 
 
 @router.get("/sellable", response_model=list[DeviceOut])
@@ -241,6 +274,11 @@ async def transfer_device(
         reference_type=ReferenceType.TRANSFER,
         notes=body.notes,
     )
+    # Auto-create refurb job when device is moved to AWAITING_REFURB
+    if body.to_status == DeviceStatus.AWAITING_REFURB:
+        from app.services.refurb import ensure_refurb_job
+        await ensure_refurb_job(db, device.id, current_user.id)
+
     await db.commit()
     await db.refresh(device)
     return device_to_out(device, current_user.role.value)

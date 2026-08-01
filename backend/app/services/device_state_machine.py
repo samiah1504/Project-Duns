@@ -1,28 +1,47 @@
 from app.models.device import DeviceStatus, DeviceLocation
 from app.core.exceptions import InvalidTransitionError
 
-# Allowed (status, location) transitions: from_status -> list of (to_status, to_location)
 ALLOWED_TRANSITIONS: dict[DeviceStatus, list[tuple[DeviceStatus, DeviceLocation]]] = {
-    # After PO intake
     DeviceStatus.AWAITING_REFURB: [
         (DeviceStatus.IN_REFURB, DeviceLocation.BENCH),
-        (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),
-    ],
-    DeviceStatus.IN_REFURB: [
-        (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),
-        (DeviceStatus.SENT_EXTERNAL, DeviceLocation.EXTERNAL),
+        (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),  # direct sellable (no refurb)
+        (DeviceStatus.STOCK_TO_RETURN, DeviceLocation.INTAKE),
+        (DeviceStatus.HARVESTED, DeviceLocation.SCRAP),
         (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
     ],
+    DeviceStatus.IN_REFURB: [
+        (DeviceStatus.AWAITING_QC, DeviceLocation.QC),
+        (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),  # legacy direct path
+        (DeviceStatus.SENT_EXTERNAL, DeviceLocation.EXTERNAL),
+        (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
+        (DeviceStatus.HARVESTED, DeviceLocation.SCRAP),
+        (DeviceStatus.AWAITING_REFURB, DeviceLocation.INTAKE),  # unassign / put back
+    ],
+    DeviceStatus.AWAITING_QC: [
+        (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),   # QC pass
+        (DeviceStatus.FAILED_QC, DeviceLocation.BENCH),        # QC fail
+        (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
+    ],
+    DeviceStatus.FAILED_QC: [
+        (DeviceStatus.IN_REFURB, DeviceLocation.BENCH),        # return to engineer
+        (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
+        (DeviceStatus.HARVESTED, DeviceLocation.SCRAP),
+    ],
     DeviceStatus.SENT_EXTERNAL: [
+        (DeviceStatus.AWAITING_QC, DeviceLocation.QC),
         (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),
         (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
     ],
     DeviceStatus.SELLABLE: [
         (DeviceStatus.RESERVED, DeviceLocation.SALES_STOCK),
+        (DeviceStatus.STOCK_TO_RETURN, DeviceLocation.INTAKE),
+        (DeviceStatus.HARVESTED, DeviceLocation.SCRAP),
+        (DeviceStatus.AWAITING_REFURB, DeviceLocation.INTAKE),  # needs refurb after all
     ],
     DeviceStatus.RESERVED: [
         (DeviceStatus.SOLD, DeviceLocation.SALES_STOCK),
         (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),
+        (DeviceStatus.STOCK_TO_RETURN, DeviceLocation.INTAKE),
     ],
     DeviceStatus.SOLD: [
         (DeviceStatus.RETURNED, DeviceLocation.INTAKE),
@@ -30,9 +49,17 @@ ALLOWED_TRANSITIONS: dict[DeviceStatus, list[tuple[DeviceStatus, DeviceLocation]
     DeviceStatus.RETURNED: [
         (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),
         (DeviceStatus.IN_REFURB, DeviceLocation.BENCH),
+        (DeviceStatus.AWAITING_REFURB, DeviceLocation.INTAKE),
+        (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
+        (DeviceStatus.STOCK_TO_RETURN, DeviceLocation.INTAKE),
+    ],
+    DeviceStatus.STOCK_TO_RETURN: [
+        (DeviceStatus.AWAITING_REFURB, DeviceLocation.INTAKE),  # cancel return
+        (DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK),    # cancel return, already ok
         (DeviceStatus.SCRAPPED, DeviceLocation.SCRAP),
     ],
-    DeviceStatus.SCRAPPED: [],
+    DeviceStatus.HARVESTED: [],   # terminal
+    DeviceStatus.SCRAPPED: [],    # terminal
 }
 
 

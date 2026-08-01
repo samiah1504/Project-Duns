@@ -24,6 +24,10 @@ import LabelDesigner from './pages/LabelDesigner'
 import SaleDetail from './pages/SaleDetail'
 import Expenses from './pages/Expenses'
 import CostPriceManagement from './pages/CostPriceManagement'
+import SellableStock from './pages/SellableStock'
+import AllDevices from './pages/AllDevices'
+import StockToReturn from './pages/StockToReturn'
+import HarvestedStock from './pages/HarvestedStock'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } })
 
@@ -71,6 +75,10 @@ export default function App() {
             <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
             <Route path="/label-designer" element={<ProtectedLayout><LabelDesigner /></ProtectedLayout>} />
             <Route path="/cost-price" element={<ProtectedLayout><CostPriceManagement /></ProtectedLayout>} />
+            <Route path="/sellable" element={<ProtectedLayout><SellableStock /></ProtectedLayout>} />
+            <Route path="/all-devices" element={<ProtectedLayout><AllDevices /></ProtectedLayout>} />
+            <Route path="/stock-to-return" element={<ProtectedLayout><StockToReturn /></ProtectedLayout>} />
+            <Route path="/harvested" element={<ProtectedLayout><HarvestedStock /></ProtectedLayout>} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>

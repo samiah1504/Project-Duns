@@ -17,15 +17,19 @@ export interface User {
 export type DeviceStatus =
   | 'AWAITING_REFURB'
   | 'IN_REFURB'
+  | 'AWAITING_QC'
+  | 'FAILED_QC'
   | 'SENT_EXTERNAL'
   | 'SCRAPPED'
   | 'SELLABLE'
   | 'RESERVED'
   | 'SOLD'
   | 'RETURNED'
+  | 'STOCK_TO_RETURN'
+  | 'HARVESTED'
 
 export type DeviceGrade = 'A' | 'B' | 'C'
-export type DeviceLocation = 'INTAKE' | 'BENCH' | 'SALES_STOCK' | 'EXTERNAL' | 'SCRAP'
+export type DeviceLocation = 'INTAKE' | 'BENCH' | 'SALES_STOCK' | 'EXTERNAL' | 'SCRAP' | 'QC'
 
 export interface Device {
   id: string
@@ -287,7 +291,7 @@ export interface RefurbJob {
   job_number: string
   device_id: string
   assigned_engineer_id?: string
-  status: 'open' | 'in_progress' | 'closed'
+  status: 'open' | 'in_progress' | 'awaiting_qc' | 'qc_failed' | 'closed'
   fault_description?: string
   date_opened: string
   date_closed?: string
@@ -295,8 +299,24 @@ export interface RefurbJob {
   external_vendor_id?: string
   external_cost: string
   notes?: string
+  auto_created?: boolean
   created_at: string
   parts_used: RefurbJobPart[]
+}
+
+export interface DeviceDashboardCounts {
+  all: number
+  awaiting_refurb: number
+  in_refurb: number
+  awaiting_qc: number
+  failed_qc: number
+  sellable: number
+  reserved: number
+  sold: number
+  returned: number
+  stock_to_return: number
+  harvested: number
+  scrapped: number
 }
 
 export interface RefurbJobPart {

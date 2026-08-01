@@ -6,6 +6,10 @@ Each module key maps to a human label and the roles that have it by default.
 ALL_MODULES = [
     "dashboard",
     "devices",
+    "all_devices",
+    "sellable_stock",
+    "stock_to_return",
+    "harvested_stock",
     "intake",
     "refurb",
     "sales",
@@ -24,6 +28,10 @@ ALL_MODULES = [
 MODULE_LABELS = {
     "dashboard": "Dashboard",
     "devices": "Devices",
+    "all_devices": "All Devices",
+    "sellable_stock": "Sellable Stock",
+    "stock_to_return": "Stock to Return",
+    "harvested_stock": "Harvested Stock",
     "intake": "Intake / Purchase Orders",
     "refurb": "Refurb Jobs",
     "sales": "Sales",
@@ -41,10 +49,17 @@ MODULE_LABELS = {
 
 ROLE_DEFAULTS: dict[str, list[str]] = {
     "ADMIN": ALL_MODULES,
-    "OPERATIONS": ["dashboard", "devices", "intake", "parts", "phone_models", "suppliers", "reports", "expenses", "cost_price", "customers", "returns"],
-    "INVENTORY": ["dashboard", "devices", "intake", "parts", "phone_models", "suppliers"],
-    "SALES": ["dashboard", "devices", "sales", "customers", "returns"],
-    "ENGINEER": ["dashboard", "devices", "refurb", "parts"],
+    "OPERATIONS": [
+        "dashboard", "all_devices", "sellable_stock", "stock_to_return", "harvested_stock",
+        "intake", "parts", "phone_models", "suppliers", "reports", "expenses", "cost_price",
+        "customers", "returns",
+    ],
+    "INVENTORY": [
+        "dashboard", "all_devices", "sellable_stock", "stock_to_return", "harvested_stock",
+        "intake", "refurb", "parts", "phone_models", "suppliers",
+    ],
+    "SALES": ["dashboard", "sellable_stock", "sales", "customers", "returns"],
+    "ENGINEER": ["dashboard", "refurb", "parts"],
     "RECORDS": ["dashboard", "reports", "expenses"],
 }
 

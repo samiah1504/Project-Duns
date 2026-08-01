@@ -5,7 +5,12 @@ import { useAuth } from '../hooks/useAuth'
 // module key → nav entry
 const NAV = [
   { to: '/', label: 'Dashboard', module: 'dashboard' },
-  { to: '/devices', label: 'Devices', module: 'devices' },
+  // Operational stock pages
+  { to: '/all-devices', label: 'All Devices', module: 'all_devices' },
+  { to: '/sellable', label: 'Sellable Stock', module: 'sellable_stock' },
+  { to: '/stock-to-return', label: 'Stock to Return', module: 'stock_to_return' },
+  { to: '/harvested', label: 'Harvested Stock', module: 'harvested_stock' },
+  // Operations
   { to: '/intake', label: 'Intake (POs)', module: 'intake' },
   { to: '/refurb', label: 'Refurb Jobs', module: 'refurb' },
   { to: '/sales', label: 'Sales', module: 'sales' },
@@ -16,10 +21,13 @@ const NAV = [
   { to: '/expenses', label: 'Expenses', module: 'expenses' },
   { to: '/phone-models', label: 'Phone Models', module: 'phone_models' },
   { to: '/suppliers', label: 'Suppliers', module: 'suppliers' },
+  // Admin
   { to: '/users', label: 'Users', module: 'users' },
   { to: '/cost-price', label: '₦ Cost Price Mgmt', module: 'cost_price' },
   { to: '/label-designer', label: '🏷 Label Designer', module: 'settings' },
   { to: '/settings', label: '⚙ Settings', module: 'settings' },
+  // Legacy - kept for backwards compat but hidden by new module system
+  { to: '/devices', label: 'Devices (Legacy)', module: 'devices' },
 ]
 
 const STATUS_COLORS: Record<string, string> = {

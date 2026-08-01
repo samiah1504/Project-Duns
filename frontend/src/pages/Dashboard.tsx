@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   getReconciliation, getWIPValue, getLowStockAlerts, getSalesSummary,
-  getCeoDashboard,
+  getCeoDashboard, getDeviceDashboardCounts,
 } from '../services/api'
 import { Card, fmt } from '../components/Layout'
 import { useAuth } from '../hooks/useAuth'
@@ -479,19 +479,23 @@ function CeoDashboard() {
             <Section title="Inventory Overview">
               <CardRow>
                 <StatCard label="Sellable" value={inv.sellable ?? 0} color="#22c55e"
-                  onClick={() => navigate('/devices?status=SELLABLE')} />
+                  onClick={() => navigate('/sellable')} />
                 <StatCard label="Awaiting Refurb" value={inv.awaiting_refurb ?? 0} color="#f59e0b"
-                  onClick={() => navigate('/devices?status=AWAITING_REFURB')} />
+                  onClick={() => navigate('/refurb')} />
                 <StatCard label="In Refurb (Bench)" value={inv.in_refurb ?? 0} color="#f97316"
-                  onClick={() => navigate('/refurb-jobs')} />
+                  onClick={() => navigate('/refurb')} />
+                <StatCard label="Awaiting QC" value={inv.awaiting_qc ?? 0} color="#7c3aed"
+                  onClick={() => navigate('/refurb')} />
                 <StatCard label="Sent External" value={inv.sent_external ?? 0} color="#8b5cf6"
-                  onClick={() => navigate('/devices?status=SENT_EXTERNAL')} />
+                  onClick={() => navigate('/all-devices')} />
                 <StatCard label="Reserved" value={inv.reserved ?? 0} color="#06b6d4"
-                  onClick={() => navigate('/devices?status=RESERVED')} />
+                  onClick={() => navigate('/sellable')} />
+                <StatCard label="Stock to Return" value={inv.stock_to_return ?? 0} color="#dc2626"
+                  onClick={() => navigate('/stock-to-return')} />
+                <StatCard label="Harvested" value={inv.harvested ?? 0} color="#065f46"
+                  onClick={() => navigate('/harvested')} />
                 <StatCard label="Returned" value={inv.returned ?? 0} color="#ec4899"
                   onClick={() => navigate('/returns')} />
-                <StatCard label="Scrapped" value={inv.scrapped ?? 0} color="#ef4444"
-                  onClick={() => navigate('/devices?status=SCRAPPED')} />
                 <StatCard label="Sold (All Time)" value={inv.sold ?? 0} color="#3b82f6"
                   onClick={() => navigate('/sales')} />
               </CardRow>

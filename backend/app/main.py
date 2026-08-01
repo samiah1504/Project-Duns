@@ -183,6 +183,36 @@ async def lifespan(app: FastAPI):
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; END $$",
+            # New DeviceStatus values for QC workflow, returns and harvesting
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='AWAITING_QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'AWAITING_QC'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='FAILED_QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'FAILED_QC'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='STOCK_TO_RETURN' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'STOCK_TO_RETURN'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='HARVESTED' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'HARVESTED'; END IF; END $$",
+            # New DeviceLocation for QC station
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicelocation')) THEN ALTER TYPE devicelocation ADD VALUE 'QC'; END IF; END $$",
+            # New JobStatus values for QC workflow
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_qc' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'awaiting_qc'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='qc_failed' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'qc_failed'; END IF; END $$",
+            # Auto-created flag on refurb jobs
+            "ALTER TABLE refurb_jobs ADD COLUMN IF NOT EXISTS auto_created BOOLEAN NOT NULL DEFAULT FALSE",
+            # Backfill: create refurb jobs for existing AWAITING_REFURB devices without an active job
+            """INSERT INTO refurb_jobs (id, job_number, device_id, status, date_opened, auto_created, external_cost, created_at)
+               SELECT
+                 gen_random_uuid(),
+                 'JOB-MIGR-' || ROW_NUMBER() OVER (ORDER BY d.created_at),
+                 d.id,
+                 'open',
+                 CURRENT_DATE,
+                 TRUE,
+                 0.00,
+                 NOW()
+               FROM devices d
+               WHERE d.status = 'AWAITING_REFURB'
+               AND NOT EXISTS (
+                 SELECT 1 FROM refurb_jobs rj
+                 WHERE rj.device_id = d.id
+                 AND rj.status NOT IN ('closed')
+               )""",
         ]:
             await conn.execute(text(stmt))
     yield
