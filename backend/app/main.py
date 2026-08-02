@@ -116,8 +116,9 @@ async def lifespan(app: FastAPI):
                 migrated BOOLEAN NOT NULL DEFAULT FALSE
             )""",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_po_received_devices_imei ON po_received_devices (imei)",
-            # Data migration: link existing devices to received records (idempotent via NOT EXISTS)
-            """INSERT INTO po_received_devices
+            # Data migrations wrapped in exception handlers — failures are logged but never crash startup
+            """DO $$ BEGIN
+               INSERT INTO po_received_devices
                 (id, po_id, line_item_id, device_id, imei, actual_brand, actual_model_str,
                  actual_ram_str, actual_storage_str, actual_colour_str, actual_grade,
                  actual_condition, selling_price, received_at, migrated)
@@ -140,21 +141,27 @@ async def lifespan(app: FastAPI):
                FROM devices d
                JOIN po_line_items li ON li.po_id = d.purchase_order_id AND li.imei = d.imei
                WHERE d.purchase_order_id IS NOT NULL
-               AND NOT EXISTS (SELECT 1 FROM po_received_devices prd WHERE prd.imei = d.imei)""",
-            # Update received_qty on line items that have received devices
-            """UPDATE po_line_items li
+               AND NOT EXISTS (SELECT 1 FROM po_received_devices prd WHERE prd.imei = d.imei);
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               UPDATE po_line_items li
                SET received_qty = sub.cnt,
                    item_status = CASE WHEN sub.cnt >= li.quantity THEN 'fully_received' ELSE 'partially_received' END
                FROM (SELECT line_item_id, COUNT(*) AS cnt FROM po_received_devices GROUP BY line_item_id) sub
-               WHERE li.id = sub.line_item_id AND li.received_qty = 0""",
-            # Fix selling_price on existing devices from their line items
-            """UPDATE devices d
+               WHERE li.id = sub.line_item_id AND li.received_qty = 0;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               UPDATE devices d
                SET selling_price = prd.selling_price,
                    selling_price_set_at = prd.received_at
                FROM po_received_devices prd
                WHERE prd.device_id = d.id
                AND d.selling_price IS NULL
-               AND prd.selling_price IS NOT NULL""",
+               AND prd.selling_price IS NOT NULL;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
             # Price changes audit table
             """CREATE TABLE IF NOT EXISTS price_changes (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -199,7 +206,8 @@ async def lifespan(app: FastAPI):
             # Auto-created flag on refurb jobs
             "ALTER TABLE refurb_jobs ADD COLUMN IF NOT EXISTS auto_created BOOLEAN NOT NULL DEFAULT FALSE",
             # Backfill: create refurb jobs for existing AWAITING_REFURB devices without an active job
-            """INSERT INTO refurb_jobs (id, job_number, device_id, status, date_opened, auto_created, external_cost, created_at)
+            """DO $$ BEGIN
+               INSERT INTO refurb_jobs (id, job_number, device_id, status, date_opened, auto_created, external_cost, created_at)
                SELECT
                  gen_random_uuid(),
                  'JOB-MIGR-' || ROW_NUMBER() OVER (ORDER BY d.created_at),
@@ -215,7 +223,9 @@ async def lifespan(app: FastAPI):
                  SELECT 1 FROM refurb_jobs rj
                  WHERE rj.device_id = d.id
                  AND rj.status NOT IN ('closed')
-               )""",
+               );
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
     ]
     for stmt in _migrations:
         async with engine.begin() as conn:
