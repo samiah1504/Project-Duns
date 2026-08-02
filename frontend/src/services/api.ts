@@ -133,6 +133,8 @@ export const getSuppliers = (params?: Record<string, string>) => api.get('/suppl
 export const createSupplier = (data: unknown) => api.post('/suppliers', data)
 export const updateSupplier = (id: string, data: unknown) => api.patch(`/suppliers/${id}`, data)
 
+export const createSimplePO = (data: unknown) => api.post('/purchase-orders/simple-receive', data)
+
 // Users
 export const getUsers = () => api.get('/users')
 export const createUser = (data: unknown) => api.post('/users', data)

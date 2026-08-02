@@ -196,3 +196,23 @@ class POReconciliation(BaseModel):
 
 class ReceivePOBody(BaseModel):
     notes: Optional[str] = None
+
+
+class SimpleReceiveItem(BaseModel):
+    brand: str
+    model_name_str: str
+    ram_str: Optional[str] = None
+    storage_str: Optional[str] = None
+    colour_str: Optional[str] = None
+    grade: str = "C"
+    initial_status: str = "awaiting_refurb"
+    imei: str
+    selling_price: Optional[Decimal] = None
+    notes: Optional[str] = None
+
+
+class SimpleReceivePORequest(BaseModel):
+    supplier_id: str
+    shipping_cost: Decimal = Decimal("0.00")
+    notes: Optional[str] = None
+    items: List[SimpleReceiveItem]

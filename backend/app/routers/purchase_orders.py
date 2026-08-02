@@ -16,13 +16,14 @@ from app.schemas.purchase_order import (
     POLineItemCreate, POLineItemUpdate, POReceivedDeviceOut,
     ReceiveLineItemRequest, MarkNotReceivedRequest, CloseDiscrepancyRequest,
     DeviceForPOOut, POReconciliation, LineItemReconciliation, ReceivePOBody,
+    SimpleReceivePORequest,
 )
 from app.core.permissions import inventory_or_admin, admin_or_operations, any_authenticated
 from app.core.exceptions import NotFoundError, BadRequestError
 from app.services.intake import (
     create_purchase_order, receive_line_item, mark_line_item_not_received,
     close_po_with_discrepancy, receive_purchase_order,
-    _find_or_create_phone_model,
+    _find_or_create_phone_model, create_and_receive_po_simple,
 )
 from app.models.user import User
 
@@ -113,6 +114,27 @@ async def create_po(
         shipping_cost=body.shipping_cost,
         notes=body.notes,
         order_date=body.date,
+        user_id=current_user.id,
+    )
+    await db.commit()
+    result = await db.execute(
+        select(PurchaseOrder).where(PurchaseOrder.id == po.id).options(*_po_load_options())
+    )
+    return _po_to_out(result.scalar_one())
+
+
+@router.post("/simple-receive", response_model=PurchaseOrderOut, status_code=201)
+async def simple_receive_po(
+    body: SimpleReceivePORequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(inventory_or_admin()),
+):
+    po = await create_and_receive_po_simple(
+        db,
+        supplier_id=body.supplier_id,
+        items=body.items,
+        shipping_cost=body.shipping_cost,
+        notes=body.notes,
         user_id=current_user.id,
     )
     await db.commit()

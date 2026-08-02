@@ -374,6 +374,80 @@ async def _refresh_po_status(db: AsyncSession, po: PurchaseOrder) -> None:
         po.status = POStatus.CLOSED_DISCREPANCY if all_closed else POStatus.ORDERED
 
 
+async def create_and_receive_po_simple(
+    db: AsyncSession,
+    supplier_id: str,
+    items: list,
+    shipping_cost=None,
+    notes: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> PurchaseOrder:
+    """Create a PO and immediately receive all items into inventory."""
+    from decimal import Decimal
+
+    po_number = await generate_po_number(db)
+    po = PurchaseOrder(
+        po_number=po_number,
+        supplier_id=supplier_id,
+        date=date.today(),
+        shipping_cost=shipping_cost or Decimal("0.00"),
+        status=POStatus.ORDERED,
+        notes=notes,
+        created_by_user_id=user_id,
+    )
+    db.add(po)
+    await db.flush()
+
+    for item in items:
+        pm = await _find_or_create_phone_model(
+            db,
+            brand=item.brand,
+            model_name=item.model_name_str,
+            ram=item.ram_str,
+            storage=item.storage_str,
+            colour=item.colour_str,
+        )
+        line = POLineItem(
+            po_id=po.id,
+            line_type=POLineType.DEVICE,
+            model_id=pm.id,
+            grade=item.grade,
+            unit_cost=Decimal("0.00"),
+            selling_price=item.selling_price,
+            quantity=1,
+            notes=item.notes,
+            brand=item.brand,
+            model_name_str=item.model_name_str,
+            ram_str=item.ram_str,
+            storage_str=item.storage_str,
+            colour_str=item.colour_str,
+            initial_status=item.initial_status,
+            item_status=POLineItemStatus.PENDING.value,
+            received_qty=0,
+        )
+        db.add(line)
+        await db.flush()
+
+        await receive_line_item(
+            db,
+            po_id=po.id,
+            line_item_id=line.id,
+            imei=item.imei,
+            user_id=user_id,
+            actual_brand=item.brand,
+            actual_model_str=item.model_name_str,
+            actual_ram_str=item.ram_str,
+            actual_storage_str=item.storage_str,
+            actual_colour_str=item.colour_str,
+            actual_grade=item.grade,
+            actual_condition=item.initial_status,
+            selling_price=item.selling_price,
+            notes=item.notes,
+        )
+
+    return po
+
+
 async def close_po_with_discrepancy(
     db: AsyncSession,
     po_id: str,
