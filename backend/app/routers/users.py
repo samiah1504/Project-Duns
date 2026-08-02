@@ -40,7 +40,7 @@ async def create_user(
         username=body.username,
         employee_id=body.employee_id,
         hashed_password=hash_password(body.password),
-        must_change_password=True,
+        must_change_password=False,
         role=body.role,
         assigned_location=body.assigned_location,
     )
@@ -109,7 +109,7 @@ async def reset_user_password(
     if not user:
         raise NotFoundError("User not found")
     user.hashed_password = hash_password(body.new_password)
-    user.must_change_password = True
+    user.must_change_password = False
     await db.commit()
     await db.refresh(user)
     return _out(user)
