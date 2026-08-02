@@ -113,7 +113,7 @@ async def lifespan(app: FastAPI):
                 migrated BOOLEAN NOT NULL DEFAULT FALSE
             )""",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_po_received_devices_imei ON po_received_devices (imei)",
-            # Data migration: link existing devices to received records (idempotent via ON CONFLICT)
+            # Data migration: link existing devices to received records (idempotent via NOT EXISTS)
             """INSERT INTO po_received_devices
                 (id, po_id, line_item_id, device_id, imei, actual_brand, actual_model_str,
                  actual_ram_str, actual_storage_str, actual_colour_str, actual_grade,
@@ -137,7 +137,7 @@ async def lifespan(app: FastAPI):
                FROM devices d
                JOIN po_line_items li ON li.po_id = d.purchase_order_id AND li.imei = d.imei
                WHERE d.purchase_order_id IS NOT NULL
-               ON CONFLICT (imei) DO NOTHING""",
+               AND NOT EXISTS (SELECT 1 FROM po_received_devices prd WHERE prd.imei = d.imei)""",
             # Update received_qty on line items that have received devices
             """UPDATE po_line_items li
                SET received_qty = sub.cnt,
