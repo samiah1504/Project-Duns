@@ -41,6 +41,7 @@ export function useAuthProvider() {
 
   const logout = () => {
     localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
     setUser(null)
   }
 

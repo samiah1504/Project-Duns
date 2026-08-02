@@ -18,6 +18,7 @@ export default function Login() {
     try {
       const res = await login(username, password)
       localStorage.setItem('access_token', res.data.access_token)
+      if (res.data.refresh_token) localStorage.setItem('refresh_token', res.data.refresh_token)
       setUser(res.data.user)
       if (res.data.user?.must_change_password) {
         navigate('/change-password')

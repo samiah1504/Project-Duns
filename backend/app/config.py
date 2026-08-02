@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://tardmart:tardmart@localhost:5432/tardmart"
     SECRET_KEY: str = "dev-secret-change-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
     # Comma-separated origins; "*" allows all (dev default only)
     CORS_ORIGINS: str = "*"
     LOG_LEVEL: str = "INFO"

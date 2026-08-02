@@ -11,11 +11,36 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+let _refreshing: Promise<void> | null = null
+
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
+  async (err) => {
+    const original = err.config
+    if (err.response?.status === 401 && !original._retry) {
+      original._retry = true
+      const refreshToken = localStorage.getItem('refresh_token')
+      if (refreshToken) {
+        if (!_refreshing) {
+          _refreshing = axios
+            .post((import.meta.env.VITE_API_URL ?? '') + '/api/auth/refresh', { refresh_token: refreshToken })
+            .then((r) => {
+              localStorage.setItem('access_token', r.data.access_token)
+              if (r.data.refresh_token) localStorage.setItem('refresh_token', r.data.refresh_token)
+            })
+            .catch(() => {
+              localStorage.removeItem('access_token')
+              localStorage.removeItem('refresh_token')
+              window.location.href = '/login'
+            })
+            .finally(() => { _refreshing = null })
+        }
+        await _refreshing
+        original.headers.Authorization = `Bearer ${localStorage.getItem('access_token')}`
+        return api(original)
+      }
       localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
       window.location.href = '/login'
     }
     return Promise.reject(err)
