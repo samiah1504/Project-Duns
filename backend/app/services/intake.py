@@ -398,6 +398,8 @@ async def create_and_receive_po_simple(
     db.add(po)
     await db.flush()
 
+    # Create ALL line items first so _refresh_po_status sees the correct totals
+    line_ids: list[tuple[str, object]] = []
     for item in items:
         pm = await _find_or_create_phone_model(
             db,
@@ -427,11 +429,14 @@ async def create_and_receive_po_simple(
         )
         db.add(line)
         await db.flush()
+        line_ids.append((line.id, item))
 
+    # Now receive each device — PO totals are correct so status transitions work
+    for line_id, item in line_ids:
         await receive_line_item(
             db,
             po_id=po.id,
-            line_item_id=line.id,
+            line_item_id=line_id,
             imei=item.imei,
             user_id=user_id,
             actual_brand=item.brand,
