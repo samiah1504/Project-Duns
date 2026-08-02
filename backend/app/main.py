@@ -46,10 +46,13 @@ import app.models.purchase_order  # noqa: F401 — registers POReceivedDevice wi
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Run create_all first in its own transaction
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Idempotent column additions for schema evolution
-        for stmt in [
+
+    # Run each migration in its own transaction so DDL commits before next statement sees it.
+    # This is critical for: CREATE UNIQUE INDEX → ON CONFLICT, ALTER TYPE ADD VALUE visibility.
+    _migrations = [
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS brand VARCHAR(100)",
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS model_name_str VARCHAR(100)",
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS storage_str VARCHAR(50)",
@@ -213,7 +216,9 @@ async def lifespan(app: FastAPI):
                  WHERE rj.device_id = d.id
                  AND rj.status NOT IN ('closed')
                )""",
-        ]:
+    ]
+    for stmt in _migrations:
+        async with engine.begin() as conn:
             await conn.execute(text(stmt))
     yield
 
