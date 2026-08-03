@@ -38,9 +38,7 @@ class AuditLog(Base):
         UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
     )
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    reference_type: Mapped[ReferenceType | None] = mapped_column(
-        SAEnum(ReferenceType, create_constraint=False, native_enum=False), nullable=True
-    )
+    reference_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     reference_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

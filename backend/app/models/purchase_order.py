@@ -58,7 +58,7 @@ class PurchaseOrder(Base):
     date: Mapped[date] = mapped_column(Date, default=date.today, nullable=False)
     shipping_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     status: Mapped[POStatus] = mapped_column(
-        SAEnum(POStatus, create_constraint=False, native_enum=False), default=POStatus.ORDERED, nullable=False
+        String(30), default=POStatus.ORDERED.value, nullable=False
     )
     received_by_user_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
@@ -100,7 +100,7 @@ class POLineItem(Base):
     po_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), ForeignKey("purchase_orders.id"), nullable=False
     )
-    line_type: Mapped[POLineType] = mapped_column(SAEnum(POLineType, create_constraint=False, native_enum=False), nullable=False)
+    line_type: Mapped[str] = mapped_column(String(10), nullable=False)
     imei: Mapped[str | None] = mapped_column(String(20), nullable=True)  # legacy field
     model_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("phone_models.id"), nullable=True

@@ -188,6 +188,17 @@ async def lifespan(app: FastAPI):
             "UPDATE po_line_items SET item_status = LOWER(item_status) WHERE item_status IS NOT NULL AND item_status ~ '[a-z]' IS FALSE",
             "UPDATE refurb_jobs SET status = LOWER(status) WHERE status IS NOT NULL AND status ~ '[a-z]' IS FALSE",
             "UPDATE refurb_jobs SET outcome = LOWER(outcome) WHERE outcome IS NOT NULL AND outcome ~ '[a-z]' IS FALSE",
+            # Drop orphaned native PostgreSQL enum types. After the columns were converted to
+            # VARCHAR above, these types are no longer used by any column. However SQLAlchemy
+            # still discovers them via pg_catalog at connection time and registers a result
+            # processor that crashes with LookupError when reading back values like
+            # 'fully_received'. Dropping them makes SQLAlchemy treat the columns as plain strings.
+            "DO $$ BEGIN DROP TYPE IF EXISTS postatus CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS jobstatus CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS joboutcome CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS polineitemstatus CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS polinetype CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS referencetype CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # PO audit: who created it
             "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)",
             # POLineItem receiving tracking
