@@ -84,11 +84,26 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS selling_price NUMERIC(10,2)",
             # Add OPERATIONS to userrole enum
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='OPERATIONS' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='userrole')) THEN ALTER TYPE userrole ADD VALUE 'OPERATIONS'; END IF; END $$",
-            # PO status expansion — add new enum values safely
+            # PO status expansion — add new enum values safely (legacy; kept for old DBs)
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='ordered' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'ordered'; END IF; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='partially_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'partially_received'; END IF; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='fully_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'fully_received'; END IF; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='closed_discrepancy' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'closed_discrepancy'; END IF; END $$",
+            # Convert purchase_orders.status from native PostgreSQL enum to plain VARCHAR.
+            # The Python model uses native_enum=False (stores as text) but the DB column may
+            # still be the old postatus enum type which rejects values like 'ordered'/'ORDERED'.
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='purchase_orders' AND column_name='status'
+                 AND udt_name='postatus'
+               ) THEN
+                 ALTER TABLE purchase_orders
+                   ALTER COLUMN status TYPE VARCHAR(30)
+                   USING status::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
             # PO audit: who created it
             "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)",
             # POLineItem receiving tracking
