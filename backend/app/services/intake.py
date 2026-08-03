@@ -225,6 +225,9 @@ async def receive_line_item(
     elif eff_condition == "scrapped":
         init_status = DeviceStatus.SCRAPPED
         init_location = DeviceLocation.SCRAP
+    elif eff_condition == "stock_to_return":
+        init_status = DeviceStatus.STOCK_TO_RETURN
+        init_location = DeviceLocation.INTAKE
     else:
         init_status = DeviceStatus.AWAITING_REFURB
         init_location = DeviceLocation.INTAKE
@@ -296,7 +299,7 @@ async def receive_line_item(
     # Auto-update PO status
     await _refresh_po_status(db, po)
 
-    # Auto-create refurb job for devices received as awaiting refurbishment
+    # Auto-create refurb job only for awaiting-refurb devices
     if init_status == DeviceStatus.AWAITING_REFURB:
         from app.services.refurb import ensure_refurb_job
         await ensure_refurb_job(db, device.id, user_id)
