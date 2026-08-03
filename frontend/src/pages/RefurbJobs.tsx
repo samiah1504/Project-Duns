@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import {
   getRefurbJobs, createRefurbJob, addPartsToJob, closeRefurbJob,
   assignEngineerToJob, completeRefurbJob, passQCJob, failQCJob, returnToEngineerJob,
-  getDevices, getParts, getUsers,
+  getDevices, getParts, getEngineers,
 } from '../services/api'
 import { RefurbJob, Device, Part, User } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select, fmt } from '../components/Layout'
@@ -270,8 +270,8 @@ export default function RefurbJobs() {
   })
 
   const { data: engineers = [] } = useQuery<User[]>({
-    queryKey: ['users'],
-    queryFn: () => getUsers().then(r => r.data),
+    queryKey: ['engineers'],
+    queryFn: () => getEngineers().then(r => r.data),
   })
 
   const { data: awaitingDevices = [] } = useQuery<Device[]>({
@@ -284,7 +284,7 @@ export default function RefurbJobs() {
     queryFn: () => getParts().then(r => r.data),
   })
 
-  const engineerUsers = engineers.filter(u => u.role === 'ENGINEER' || u.role === 'ADMIN' || u.role === 'INVENTORY')
+  const engineerUsers = engineers
 
   return (
     <div>

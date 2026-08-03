@@ -26,6 +26,21 @@ async def list_users(
     return [_out(u) for u in result.scalars().all()]
 
 
+@router.get("/engineers", response_model=list[UserOut])
+async def list_engineers(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Any authenticated user can fetch the engineer list (needed for job assignment dropdowns)."""
+    result = await db.execute(
+        select(User)
+        .where(User.role.in_([UserRole.ENGINEER, UserRole.ADMIN, UserRole.INVENTORY]))
+        .where(User.is_active == True)
+        .order_by(User.name)
+    )
+    return [_out(u) for u in result.scalars().all()]
+
+
 @router.post("", response_model=UserOut, status_code=201)
 async def create_user(
     body: UserCreate,
