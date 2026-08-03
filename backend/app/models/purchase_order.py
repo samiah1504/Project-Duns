@@ -100,7 +100,7 @@ class POLineItem(Base):
     po_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), ForeignKey("purchase_orders.id"), nullable=False
     )
-    line_type: Mapped[POLineType] = mapped_column(SAEnum(POLineType), nullable=False)
+    line_type: Mapped[POLineType] = mapped_column(SAEnum(POLineType, create_constraint=False, native_enum=False), nullable=False)
     imei: Mapped[str | None] = mapped_column(String(20), nullable=True)  # legacy field
     model_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("phone_models.id"), nullable=True

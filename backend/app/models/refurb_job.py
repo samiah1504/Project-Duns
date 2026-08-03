@@ -38,12 +38,12 @@ class RefurbJob(Base):
         UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
     )
     status: Mapped[JobStatus] = mapped_column(
-        SAEnum(JobStatus), default=JobStatus.OPEN, nullable=False
+        SAEnum(JobStatus, create_constraint=False, native_enum=False), default=JobStatus.OPEN, nullable=False
     )
     fault_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     date_opened: Mapped[date] = mapped_column(Date, default=date.today, nullable=False)
     date_closed: Mapped[date | None] = mapped_column(Date, nullable=True)
-    outcome: Mapped[JobOutcome | None] = mapped_column(SAEnum(JobOutcome), nullable=True)
+    outcome: Mapped[JobOutcome | None] = mapped_column(SAEnum(JobOutcome, create_constraint=False, native_enum=False), nullable=True)
     external_vendor_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("suppliers.id"), nullable=True
     )

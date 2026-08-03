@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS ram_str VARCHAR(20)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_modules TEXT",
             # User management update: username, employee_id, must_change_password
-            """DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='email') THEN ALTER TABLE users RENAME COLUMN email TO username; END IF; END $$""",
+            """DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='email') THEN ALTER TABLE users RENAME COLUMN email TO username; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$""",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
             # Inventory number for barcode system
@@ -83,12 +83,12 @@ async def lifespan(app: FastAPI):
             # Selling price on PO line items
             "ALTER TABLE po_line_items ADD COLUMN IF NOT EXISTS selling_price NUMERIC(10,2)",
             # Add OPERATIONS to userrole enum
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='OPERATIONS' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='userrole')) THEN ALTER TYPE userrole ADD VALUE 'OPERATIONS'; END IF; END $$",
-            # PO status expansion — add new enum values safely (legacy; kept for old DBs)
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='ordered' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'ordered'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='partially_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'partially_received'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='fully_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'fully_received'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='closed_discrepancy' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'closed_discrepancy'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='OPERATIONS' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='userrole')) THEN ALTER TYPE userrole ADD VALUE 'OPERATIONS'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            # PO status expansion — legacy; type may not exist on fresh DBs (model uses native_enum=False)
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_type WHERE typname='postatus') AND NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='ordered' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'ordered'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_type WHERE typname='postatus') AND NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='partially_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'partially_received'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_type WHERE typname='postatus') AND NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='fully_received' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'fully_received'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_type WHERE typname='postatus') AND NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='closed_discrepancy' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='postatus')) THEN ALTER TYPE postatus ADD VALUE 'closed_discrepancy'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # Convert purchase_orders.status from native PostgreSQL enum to plain VARCHAR.
             # The Python model uses native_enum=False (stores as text) but the DB column may
             # still be the old postatus enum type which rejects values like 'ordered'/'ORDERED'.
@@ -289,19 +289,19 @@ async def lifespan(app: FastAPI):
             )""",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES return_batches(id)",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS replacement_device_id UUID REFERENCES devices(id)",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # New DeviceStatus values for QC workflow, returns and harvesting
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='AWAITING_QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'AWAITING_QC'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='FAILED_QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'FAILED_QC'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='STOCK_TO_RETURN' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'STOCK_TO_RETURN'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='HARVESTED' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'HARVESTED'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='AWAITING_QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'AWAITING_QC'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='FAILED_QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'FAILED_QC'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='STOCK_TO_RETURN' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'STOCK_TO_RETURN'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='HARVESTED' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicestatus')) THEN ALTER TYPE devicestatus ADD VALUE 'HARVESTED'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # New DeviceLocation for QC station
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicelocation')) THEN ALTER TYPE devicelocation ADD VALUE 'QC'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='QC' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='devicelocation')) THEN ALTER TYPE devicelocation ADD VALUE 'QC'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # New JobStatus values for QC workflow
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_qc' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'awaiting_qc'; END IF; END $$",
-            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='qc_failed' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'qc_failed'; END IF; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_qc' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'awaiting_qc'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='qc_failed' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'qc_failed'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # Auto-created flag on refurb jobs
             "ALTER TABLE refurb_jobs ADD COLUMN IF NOT EXISTS auto_created BOOLEAN NOT NULL DEFAULT FALSE",
             # Backfill: create refurb jobs for existing AWAITING_REFURB devices without an active job

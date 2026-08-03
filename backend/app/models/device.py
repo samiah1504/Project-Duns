@@ -51,12 +51,12 @@ class Device(Base):
     model_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), ForeignKey("phone_models.id"), nullable=False
     )
-    grade: Mapped[DeviceGrade] = mapped_column(SAEnum(DeviceGrade), nullable=False)
+    grade: Mapped[DeviceGrade] = mapped_column(SAEnum(DeviceGrade, create_constraint=False, native_enum=False), nullable=False)
     status: Mapped[DeviceStatus] = mapped_column(
-        SAEnum(DeviceStatus), default=DeviceStatus.AWAITING_REFURB, nullable=False
+        SAEnum(DeviceStatus, create_constraint=False, native_enum=False), default=DeviceStatus.AWAITING_REFURB, nullable=False
     )
     location: Mapped[DeviceLocation] = mapped_column(
-        SAEnum(DeviceLocation), default=DeviceLocation.INTAKE, nullable=False
+        SAEnum(DeviceLocation, create_constraint=False, native_enum=False), default=DeviceLocation.INTAKE, nullable=False
     )
     custody_user_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
