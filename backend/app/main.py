@@ -176,6 +176,19 @@ async def lifespan(app: FastAPI):
                END IF;
                EXCEPTION WHEN OTHERS THEN NULL;
                END $$""",
+            # Normalise all status/role/grade/location values to lowercase after VARCHAR conversion.
+            # Old PostgreSQL native enums stored the label as-is (e.g. 'ORDERED', 'AWAITING_REFURB').
+            # Python models use lowercase values ('ordered', 'awaiting_refurb') so we must lowercase
+            # existing rows once after the column type migration above.
+            "UPDATE purchase_orders SET status = LOWER(status) WHERE status ~ '[A-Z]'",
+            "UPDATE po_line_items SET line_type = LOWER(line_type) WHERE line_type ~ '[A-Z]'",
+            "UPDATE po_line_items SET item_status = LOWER(item_status) WHERE item_status IS NOT NULL AND item_status ~ '[A-Z]'",
+            "UPDATE devices SET status = LOWER(status) WHERE status ~ '[A-Z]'",
+            "UPDATE devices SET location = LOWER(location) WHERE location ~ '[A-Z]'",
+            "UPDATE devices SET grade = LOWER(grade) WHERE grade ~ '[A-Z]'",
+            "UPDATE users SET role = LOWER(role) WHERE role ~ '[A-Z]'",
+            "UPDATE refurb_jobs SET status = LOWER(status) WHERE status ~ '[A-Z]'",
+            "UPDATE refurb_jobs SET outcome = LOWER(outcome) WHERE outcome IS NOT NULL AND outcome ~ '[A-Z]'",
             # PO audit: who created it
             "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)",
             # POLineItem receiving tracking

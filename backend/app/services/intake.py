@@ -159,8 +159,8 @@ async def receive_line_item(
     if not po:
         raise NotFoundError("Purchase order not found")
 
-    active_statuses = {"open", "ordered", "partially_received"}
-    if po.status not in (POStatus.OPEN, POStatus.ORDERED, POStatus.PARTIALLY_RECEIVED):
+    _po_status_norm = (po.status or "").lower()
+    if _po_status_norm not in {"open", "ordered", "partially_received"}:
         raise BadRequestError(f"PO is {po.status} — cannot receive more items")
 
     li_result = await db.execute(
@@ -338,7 +338,10 @@ async def mark_line_item_not_received(
 async def _refresh_po_status(db: AsyncSession, po: PurchaseOrder) -> None:
     """Recompute and save PO status based on all line item statuses."""
     li_result = await db.execute(
-        select(POLineItem).where(POLineItem.po_id == po.id, POLineItem.line_type == POLineType.DEVICE)
+        select(POLineItem).where(
+            POLineItem.po_id == po.id,
+            POLineItem.line_type.in_([POLineType.DEVICE.value, POLineType.DEVICE.value.upper()])
+        )
     )
     lines = li_result.scalars().all()
 
