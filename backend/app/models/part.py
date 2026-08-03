@@ -31,14 +31,14 @@ class Part(Base):
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    type: Mapped[PartType] = mapped_column(SAEnum(PartType), nullable=False)
+    type: Mapped[PartType] = mapped_column(SAEnum(PartType, create_constraint=False, native_enum=False), nullable=False)
     sku: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
     quantity_on_hand: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     location: Mapped[str | None] = mapped_column(String(50), nullable=True)
     min_stock_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     source: Mapped[PartSource] = mapped_column(
-        SAEnum(PartSource), default=PartSource.IMPORTED, nullable=False
+        SAEnum(PartSource, create_constraint=False, native_enum=False), default=PartSource.IMPORTED, nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

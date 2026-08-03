@@ -24,7 +24,7 @@ class Supplier(Base):
     contact: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     bank_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     type: Mapped[SupplierType] = mapped_column(
-        SAEnum(SupplierType), default=SupplierType.SUPPLIER, nullable=False
+        SAEnum(SupplierType, create_constraint=False, native_enum=False), default=SupplierType.SUPPLIER, nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

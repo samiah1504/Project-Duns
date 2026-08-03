@@ -23,7 +23,7 @@ class Customer(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[CustomerType] = mapped_column(
-        SAEnum(CustomerType), default=CustomerType.RETAIL, nullable=False
+        SAEnum(CustomerType, create_constraint=False, native_enum=False), default=CustomerType.RETAIL, nullable=False
     )
     contact: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     credit_limit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))

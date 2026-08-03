@@ -47,13 +47,13 @@ class Sale(Base):
     customer_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), ForeignKey("customers.id"), nullable=False
     )
-    type: Mapped[SaleType] = mapped_column(SAEnum(SaleType), nullable=False)
+    type: Mapped[SaleType] = mapped_column(SAEnum(SaleType, create_constraint=False, native_enum=False), nullable=False)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     tax: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     payment_status: Mapped[PaymentStatus] = mapped_column(
-        SAEnum(PaymentStatus), default=PaymentStatus.UNPAID, nullable=False
+        SAEnum(PaymentStatus, create_constraint=False, native_enum=False), default=PaymentStatus.UNPAID, nullable=False
     )
     date: Mapped[date] = mapped_column(Date, default=date.today, nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(

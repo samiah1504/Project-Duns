@@ -64,7 +64,7 @@ class ReturnBatch(Base):
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ReturnBatchStatus] = mapped_column(
-        SAEnum(ReturnBatchStatus), nullable=False, default=ReturnBatchStatus.RECEIVED
+        SAEnum(ReturnBatchStatus, create_constraint=False, native_enum=False), nullable=False, default=ReturnBatchStatus.RECEIVED
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -102,16 +102,16 @@ class ReturnRMA(Base):
     )
     date: Mapped[date] = mapped_column(Date, default=date.today, nullable=False)
     reason_code: Mapped[ReturnReasonCode] = mapped_column(
-        SAEnum(ReturnReasonCode), nullable=False
+        SAEnum(ReturnReasonCode, create_constraint=False, native_enum=False), nullable=False
     )
     condition_on_return: Mapped[str | None] = mapped_column(Text, nullable=True)
     within_warranty: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     resolution: Mapped[ReturnResolution | None] = mapped_column(
-        SAEnum(ReturnResolution), nullable=True
+        SAEnum(ReturnResolution, create_constraint=False, native_enum=False), nullable=True
     )
     refund_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     restock_outcome: Mapped[RestockOutcome | None] = mapped_column(
-        SAEnum(RestockOutcome), nullable=True
+        SAEnum(RestockOutcome, create_constraint=False, native_enum=False), nullable=True
     )
     replacement_device_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("devices.id"), nullable=True
