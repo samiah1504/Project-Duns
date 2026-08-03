@@ -766,8 +766,13 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
   const mut = useMutation({
     mutationFn: (data: unknown) => createPurchaseOrder(data),
     onSuccess: () => { toast.success('Purchase order created — use "Receive Items" when goods arrive'); onSuccess() },
-    onError: (e: { response?: { data?: { detail?: string } } }) =>
-      toast.error(e.response?.data?.detail ?? 'Failed to create PO'),
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail
+      const msg = Array.isArray(detail)
+        ? detail.map((d: any) => d.msg ?? JSON.stringify(d)).join('; ')
+        : (typeof detail === 'string' ? detail : e?.message ?? 'Failed to create purchase order')
+      toast.error(msg)
+    },
   })
 
   const reset = () => { setSupplierId(''); setShippingCost('0'); setNotes(''); setLines([emptyLine()]) }

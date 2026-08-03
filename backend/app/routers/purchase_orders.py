@@ -20,6 +20,8 @@ from app.schemas.purchase_order import (
 )
 from app.core.permissions import inventory_or_admin, admin_or_operations, any_authenticated
 from app.core.exceptions import NotFoundError, BadRequestError
+import logging
+logger = logging.getLogger("tardmart")
 from app.services.intake import (
     create_purchase_order, receive_line_item, mark_line_item_not_received,
     close_po_with_discrepancy, receive_purchase_order,
@@ -107,20 +109,25 @@ async def create_po(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(inventory_or_admin()),
 ):
-    po = await create_purchase_order(
-        db,
-        supplier_id=body.supplier_id,
-        line_items_data=body.line_items,
-        shipping_cost=body.shipping_cost,
-        notes=body.notes,
-        order_date=body.date,
-        user_id=current_user.id,
-    )
-    await db.commit()
-    result = await db.execute(
-        select(PurchaseOrder).where(PurchaseOrder.id == po.id).options(*_po_load_options())
-    )
-    return _po_to_out(result.scalar_one())
+    try:
+        po = await create_purchase_order(
+            db,
+            supplier_id=body.supplier_id,
+            line_items_data=body.line_items,
+            shipping_cost=body.shipping_cost,
+            notes=body.notes,
+            order_date=body.date,
+            user_id=current_user.id,
+        )
+        await db.commit()
+        result = await db.execute(
+            select(PurchaseOrder).where(PurchaseOrder.id == po.id).options(*_po_load_options())
+        )
+        return _po_to_out(result.scalar_one())
+    except Exception as e:
+        await db.rollback()
+        logger.error("create_po failed: %s", e, exc_info=True)
+        raise BadRequestError(f"Could not create purchase order: {e}")
 
 
 @router.post("/simple-receive", response_model=PurchaseOrderOut, status_code=201)
