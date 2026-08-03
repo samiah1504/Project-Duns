@@ -778,9 +778,6 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
     if (!supplierId) { toast.error('Please select a supplier'); return }
     const validLines = lines.filter(l => l.brand.trim() && l.model_name_str.trim())
     if (!validLines.length) { toast.error('Add at least one device with brand and model'); return }
-    if (validLines.some(l => !l.selling_price || parseFloat(l.selling_price) <= 0)) {
-      toast.error('Selling price is required for all items'); return
-    }
 
     mut.mutate({
       supplier_id: supplierId,
@@ -795,7 +792,7 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
         colour_str: l.colour_str.trim() || undefined,
         grade: l.grade,
         initial_status: l.initial_status,
-        selling_price: parseFloat(l.selling_price) || 0,
+        selling_price: l.selling_price ? parseFloat(l.selling_price) : undefined,
         quantity: parseInt(l.quantity) || 1,
         unit_cost: 0,
         notes: l.notes || undefined,
