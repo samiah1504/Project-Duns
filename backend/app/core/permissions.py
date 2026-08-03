@@ -42,6 +42,10 @@ def engineer_or_admin():
     return require_roles("ADMIN", "OPERATIONS", "ENGINEER")
 
 
+def engineer_or_inventory():
+    return require_roles("ADMIN", "OPERATIONS", "ENGINEER", "INVENTORY")
+
+
 def records_or_admin():
     return require_roles("ADMIN", "OPERATIONS", "RECORDS")
 

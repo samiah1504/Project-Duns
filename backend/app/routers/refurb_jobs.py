@@ -11,7 +11,7 @@ from app.schemas.refurb_job import (
     AssignEngineerRequest, CompleteRefurbRequest, QCPassRequest, QCFailRequest,
     ReturnToEngineerRequest,
 )
-from app.core.permissions import engineer_or_admin, any_authenticated, inventory_or_admin
+from app.core.permissions import engineer_or_admin, any_authenticated, inventory_or_admin, engineer_or_inventory
 from app.core.exceptions import NotFoundError
 from app.services.refurb import (
     create_refurb_job, add_parts_to_job, close_refurb_job,
@@ -106,7 +106,7 @@ async def add_parts(
     job_id: str,
     body: AddPartsRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(engineer_or_admin()),
+    current_user: User = Depends(engineer_or_inventory()),
 ):
     job = await add_parts_to_job(db, job_id=job_id, parts_data=body.parts, user_id=current_user.id)
     await db.commit()
