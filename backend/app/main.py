@@ -104,6 +104,78 @@ async def lifespan(app: FastAPI):
                END IF;
                EXCEPTION WHEN OTHERS THEN NULL;
                END $$""",
+            # Convert ALL other native PostgreSQL enum columns to VARCHAR so Python
+            # native_enum=False models (which write lowercase text) don't get rejected.
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='po_line_items' AND column_name='line_type'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE po_line_items ALTER COLUMN line_type TYPE VARCHAR(10) USING line_type::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='devices' AND column_name='grade'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE devices ALTER COLUMN grade TYPE VARCHAR(5) USING grade::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='devices' AND column_name='status'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE devices ALTER COLUMN status TYPE VARCHAR(30) USING status::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='devices' AND column_name='location'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE devices ALTER COLUMN location TYPE VARCHAR(30) USING location::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='users' AND column_name='role'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='refurb_jobs' AND column_name='status'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE refurb_jobs ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='refurb_jobs' AND column_name='outcome'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE refurb_jobs ALTER COLUMN outcome TYPE VARCHAR(20) USING outcome::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
             # PO audit: who created it
             "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)",
             # POLineItem receiving tracking
