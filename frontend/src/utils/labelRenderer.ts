@@ -79,10 +79,16 @@ function esc(s: string): string {
 function scaledBarcodeSVG(imei: string, wMm: number, hMm: number, scale: number): string {
   if (!imei) return ''
   const svg = barcodeSVG(imei, { height: 100, scale: Math.max(1, Math.round(scale)) })
-  return svg.replace(
-    '<svg ',
-    `<svg style="width:${wMm.toFixed(2)}mm;height:${hMm.toFixed(2)}mm;display:block;" `
-  )
+  // Remove the fixed width/height attrs so CSS dimensions win, and add
+  // preserveAspectRatio="none" so bars stretch to fill the full mm area
+  // (without this the SVG letterboxes and bars become unreadably thin)
+  return svg
+    .replace(/\s+width="[^"]*"/, '')
+    .replace(/\s+height="[^"]*"/, '')
+    .replace(
+      '<svg ',
+      `<svg preserveAspectRatio="none" style="width:${wMm.toFixed(2)}mm;height:${hMm.toFixed(2)}mm;display:block;" `
+    )
 }
 
 // ─── Single field HTML (absolute position) ────────────────────────────────────
@@ -102,10 +108,9 @@ function renderFieldHTML(
 
   if (isBarcode(field)) {
     if (!device.imei) return ''
-    // Barcode uses 92% of field width; the SVG's own quiet zones handle the rest
-    const bw = w * 0.92
-    const bh = h * 0.88
-    const bms = field.barcodeModuleWidth ?? 2
+    const bw = w * 0.98   // near-full width — quiet zones are inside the SVG viewBox
+    const bh = h * 0.92
+    const bms = field.barcodeModuleWidth ?? 3
     const svg = scaledBarcodeSVG(device.imei, bw, bh, bms)
     const justify = field.align === 'left' ? 'flex-start' : field.align === 'right' ? 'flex-end' : 'center'
     if (field.barcodeShowText) {

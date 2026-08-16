@@ -84,8 +84,8 @@ function baseField(type: FieldType, enabled: boolean): LabelField {
     color: '#000000',
     lineHeight: 1.1,
     letterSpacing: 0,
-    barcodeShowText: false,
-    barcodeModuleWidth: 2,
+    barcodeShowText: true,
+    barcodeModuleWidth: 3,
   }
 }
 
@@ -182,13 +182,37 @@ const THERMAL_50x15: LabelTemplate = {
   ],
 }
 
+// Default label: model+storage on one bold line, then barcode with IMEI
+const DEFAULT_LABEL: LabelTemplate = {
+  id: 'default',
+  name: 'Default Phone Label',
+  marginTop: 0.5, marginBottom: 0.5, marginLeft: 0.5, marginRight: 0.5,
+  fields: [
+    {
+      type: 'model_storage', enabled: true,
+      x: undefined, y: undefined, w: undefined, h: undefined, zIndex: undefined,
+      fontSize: 0, bold: true, italic: false,
+      align: 'center', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0.2,
+      barcodeShowText: false, barcodeModuleWidth: 3,
+    },
+    {
+      type: 'barcode', enabled: true,
+      x: undefined, y: undefined, w: undefined, h: undefined, zIndex: undefined,
+      fontSize: 0, bold: false, italic: false,
+      align: 'center', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
+      barcodeShowText: true, barcodeModuleWidth: 3,
+    },
+    ...(['company_name', 'phone_model', 'brand', 'grade', 'ram', 'rom',
+         'colour', 'condition', 'selling_price', 'sku', 'inventory_id',
+         'date_received', 'imei_text', 'serial_number'] as FieldType[])
+      .map(t => ({ ...baseField(t, false) })),
+  ],
+}
+
 const PRESET_TEMPLATES: LabelTemplate[] = [
-  buildTemplate('default', 'Default Phone Label',
-    ['company_name', 'phone_model', 'grade', 'barcode'],
-    ['company_name', 'phone_model', 'grade', 'barcode',
-      'brand', 'ram', 'rom', 'colour', 'condition', 'selling_price',
-      'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number'],
-  ),
+  DEFAULT_LABEL,
   THERMAL_50x15,
   buildTemplate('barcode-only', 'Barcode Only', ['barcode']),
   buildTemplate('showroom', 'Showroom Label', ['company_name', 'phone_model', 'grade', 'colour', 'selling_price']),
