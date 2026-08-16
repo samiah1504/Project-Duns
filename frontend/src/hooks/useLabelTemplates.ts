@@ -1,7 +1,7 @@
 const KEY = 'tardmart_label_templates'
 const DEFAULT_KEY = 'tardmart_default_template'
 const VERSION_KEY = 'tardmart_label_version'
-const CURRENT_VERSION = '3'  // bump this whenever presets change
+const CURRENT_VERSION = '4'  // bump this whenever presets change
 
 export type FieldType =
   | 'company_name' | 'phone_model' | 'brand' | 'barcode' | 'grade'
@@ -149,35 +149,44 @@ function buildTemplate(
   }
 }
 
-// 50×15mm thermal label — matches photo reference layout
-// Row 1: "iPhone 13 Pro 128GB" centered bold
-// Row 2: Large barcode (IMEI printed underneath by barcode renderer)
+// 50×15mm thermal label
+// Row 1: Phone Model (left, bold) | ROM / Storage (right, bold) — same line
+// Row 2: Full-width barcode with IMEI text underneath
 const THERMAL_50x15: LabelTemplate = {
   id: 'thermal-50x15',
   name: '50×15mm Thermal Label',
   marginTop: 0.5, marginBottom: 0.5, marginLeft: 0.5, marginRight: 0.5,
   paperWidthMm: 50, paperHeightMm: 15,
   fields: [
-    // ── "iPhone 13 Pro 128GB" — one bold centered line at top
+    // ── Phone Model — left 33mm of top row
     {
-      type: 'model_storage', enabled: true,
-      x: 0.5, y: 0.5, w: 49, h: 3.5, zIndex: 0,
-      fontSize: 8, bold: true, italic: false,
-      align: 'center', color: '#000000',
-      lineHeight: 1.0, letterSpacing: 0.3,
+      type: 'phone_model', enabled: true,
+      x: 0.5, y: 0.5, w: 33, h: 4, zIndex: 0,
+      fontSize: 9, bold: true, italic: false,
+      align: 'left', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
       barcodeShowText: false, barcodeModuleWidth: 3,
     },
-    // ── Barcode with IMEI text printed underneath (barcodeShowText: true)
+    // ── ROM / Storage — right 16mm of top row
+    {
+      type: 'rom', enabled: true,
+      x: 33.5, y: 0.5, w: 16, h: 4, zIndex: 1,
+      fontSize: 9, bold: true, italic: false,
+      align: 'right', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
+      barcodeShowText: false, barcodeModuleWidth: 3,
+    },
+    // ── Barcode — full width, IMEI printed underneath
     {
       type: 'barcode', enabled: true,
-      x: 0.5, y: 4.2, w: 49, h: 10.3, zIndex: 1,
+      x: 0.5, y: 5, w: 49, h: 9.5, zIndex: 2,
       fontSize: 0, bold: false, italic: false,
       align: 'center', color: '#000000',
       lineHeight: 1.0, letterSpacing: 0,
       barcodeShowText: true, barcodeModuleWidth: 3,
     },
-    // ── Disabled fields (preserved for template editor access)
-    ...(['company_name', 'phone_model', 'brand', 'grade', 'ram', 'rom',
+    // ── Disabled fields (preserved for template editor)
+    ...(['company_name', 'model_storage', 'brand', 'grade', 'ram',
          'colour', 'condition', 'selling_price', 'sku', 'inventory_id',
          'date_received', 'imei_text', 'serial_number'] as FieldType[])
       .map(t => ({ ...baseField(t, false) })),
