@@ -224,11 +224,21 @@ export function getTemplates(): LabelTemplate[] {
     const raw = localStorage.getItem(KEY)
     if (raw) {
       const saved: LabelTemplate[] = JSON.parse(raw)
-      return saved.map(t => ({
+      const migrated = saved.map(t => ({
         ...DEFAULT_MARGINS,
         ...t,
         fields: t.fields.map(migrateField),
       }))
+      // Merge any missing presets so new templates appear for existing users
+      let changed = false
+      for (const preset of PRESET_TEMPLATES) {
+        if (!migrated.find(t => t.id === preset.id)) {
+          migrated.splice(1, 0, { ...preset, fields: preset.fields.map(f => ({ ...f })) })
+          changed = true
+        }
+      }
+      if (changed) saveTemplates(migrated)
+      return migrated
     }
   } catch { /* ignore */ }
   const templates = PRESET_TEMPLATES.map(t => ({ ...t, fields: t.fields.map(f => ({ ...f })) }))

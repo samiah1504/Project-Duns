@@ -19,7 +19,19 @@ export const PRESET_SIZES: LabelSize[] = [
 export function getLabelSizes(): LabelSize[] {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const saved: LabelSize[] = JSON.parse(raw)
+      // Merge any missing presets so new sizes appear for existing users
+      let changed = false
+      for (const preset of PRESET_SIZES) {
+        if (!saved.find(s => s.id === preset.id)) {
+          saved.unshift(preset)
+          changed = true
+        }
+      }
+      if (changed) saveLabelSizes(saved)
+      return saved
+    }
   } catch { /* ignore */ }
   saveLabelSizes(PRESET_SIZES)
   return PRESET_SIZES
