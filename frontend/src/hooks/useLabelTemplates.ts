@@ -215,14 +215,20 @@ export function getTemplates(): LabelTemplate[] {
         ...t,
         fields: t.fields.map(migrateField),
       }))
-      // Merge any missing presets so new templates appear for existing users
+      // Sync presets: add missing ones and overwrite stale built-in presets
+      const PRESET_IDS = new Set(PRESET_TEMPLATES.map(p => p.id))
       let changed = false
       for (const preset of PRESET_TEMPLATES) {
-        if (!migrated.find(t => t.id === preset.id)) {
-          migrated.splice(1, 0, { ...preset, fields: preset.fields.map(f => ({ ...f })) })
+        const idx = migrated.findIndex(t => t.id === preset.id)
+        const fresh = { ...preset, fields: preset.fields.map(f => ({ ...f })) }
+        if (idx === -1) {
+          migrated.splice(1, 0, fresh)
           changed = true
-          // Set new thermal preset as the active default
           if (preset.id === 'thermal-50x15') saveDefaultTemplateId('thermal-50x15')
+        } else {
+          // Always overwrite built-in presets so code changes propagate
+          migrated[idx] = fresh
+          changed = true
         }
       }
       if (changed) saveTemplates(migrated)
