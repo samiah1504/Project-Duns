@@ -1,5 +1,6 @@
 const KEY = 'tardmart_label_sizes'
 const SEL_KEY = 'tardmart_selected_label_size'
+const VERSION_KEY = 'tardmart_label_version'  // shared with templates
 
 export interface LabelSize {
   id: string
@@ -17,25 +18,13 @@ export const PRESET_SIZES: LabelSize[] = [
 ]
 
 export function getLabelSizes(): LabelSize[] {
+  // Version check is handled by getTemplates(); if sizes were wiped, reload presets
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) {
-      const saved: LabelSize[] = JSON.parse(raw)
-      // Merge any missing presets so new sizes appear for existing users
-      let changed = false
-      for (const preset of PRESET_SIZES) {
-        if (!saved.find(s => s.id === preset.id)) {
-          saved.unshift(preset)
-          changed = true
-          // Set 50×15mm as the active size when first injected
-          if (preset.id === '50x15') saveSelectedLabelSizeId('50x15')
-        }
-      }
-      if (changed) saveLabelSizes(saved)
-      return saved
-    }
+    if (raw) return JSON.parse(raw)
   } catch { /* ignore */ }
   saveLabelSizes(PRESET_SIZES)
+  saveSelectedLabelSizeId('50x15')
   return PRESET_SIZES
 }
 

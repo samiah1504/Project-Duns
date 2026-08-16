@@ -1,5 +1,7 @@
 const KEY = 'tardmart_label_templates'
 const DEFAULT_KEY = 'tardmart_default_template'
+const VERSION_KEY = 'tardmart_label_version'
+const CURRENT_VERSION = '3'  // bump this whenever presets change
 
 export type FieldType =
   | 'company_name' | 'phone_model' | 'brand' | 'barcode' | 'grade'
@@ -230,33 +232,21 @@ function migrateField(f: Partial<LabelField> & { type: FieldType; enabled: boole
 }
 
 export function getTemplates(): LabelTemplate[] {
+  // If version changed, wipe old data and start fresh with new presets
+  if (localStorage.getItem(VERSION_KEY) !== CURRENT_VERSION) {
+    localStorage.removeItem(KEY)
+    localStorage.removeItem(DEFAULT_KEY)
+    localStorage.setItem(VERSION_KEY, CURRENT_VERSION)
+    saveDefaultTemplateId('thermal-50x15')
+  }
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
-      const saved: LabelTemplate[] = JSON.parse(raw)
-      const migrated = saved.map(t => ({
+      return JSON.parse(raw).map((t: LabelTemplate) => ({
         ...DEFAULT_MARGINS,
         ...t,
         fields: t.fields.map(migrateField),
       }))
-      // Sync presets: add missing ones and overwrite stale built-in presets
-      const PRESET_IDS = new Set(PRESET_TEMPLATES.map(p => p.id))
-      let changed = false
-      for (const preset of PRESET_TEMPLATES) {
-        const idx = migrated.findIndex(t => t.id === preset.id)
-        const fresh = { ...preset, fields: preset.fields.map(f => ({ ...f })) }
-        if (idx === -1) {
-          migrated.splice(1, 0, fresh)
-          changed = true
-          if (preset.id === 'thermal-50x15') saveDefaultTemplateId('thermal-50x15')
-        } else {
-          // Always overwrite built-in presets so code changes propagate
-          migrated[idx] = fresh
-          changed = true
-        }
-      }
-      if (changed) saveTemplates(migrated)
-      return migrated
     }
   } catch { /* ignore */ }
   const templates = PRESET_TEMPLATES.map(t => ({ ...t, fields: t.fields.map(f => ({ ...f })) }))
