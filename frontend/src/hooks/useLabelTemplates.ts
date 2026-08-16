@@ -235,6 +235,8 @@ export function getTemplates(): LabelTemplate[] {
         if (!migrated.find(t => t.id === preset.id)) {
           migrated.splice(1, 0, { ...preset, fields: preset.fields.map(f => ({ ...f })) })
           changed = true
+          // Set new thermal preset as the active default
+          if (preset.id === 'thermal-50x15') saveDefaultTemplateId('thermal-50x15')
         }
       }
       if (changed) saveTemplates(migrated)

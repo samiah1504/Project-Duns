@@ -27,6 +27,8 @@ export function getLabelSizes(): LabelSize[] {
         if (!saved.find(s => s.id === preset.id)) {
           saved.unshift(preset)
           changed = true
+          // Set 50×15mm as the active size when first injected
+          if (preset.id === '50x15') saveSelectedLabelSizeId('50x15')
         }
       }
       if (changed) saveLabelSizes(saved)
