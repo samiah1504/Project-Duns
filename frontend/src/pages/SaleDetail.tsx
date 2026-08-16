@@ -30,12 +30,10 @@ function printInvoice(sale: Sale) {
     return `<tr>
       <td>${m ? `${m.brand} ${m.model_name}` : '—'}</td>
       <td>${m?.storage ?? '—'}</td>
-      <td>${m?.colour ?? '—'}</td>
       <td>${d?.grade ?? '—'}</td>
-      <td style="font-family:monospace">${d?.imei ?? '—'}</td>
-      <td style="text-align:center">${item.quantity}</td>
-      <td style="text-align:right">₦${parseFloat(item.unit_price).toLocaleString()}</td>
-      <td style="text-align:right">₦${parseFloat(item.line_total).toLocaleString()}</td>
+      <td class="mono">${d?.imei ?? '—'}</td>
+      <td class="r">₦${parseFloat(item.unit_price).toLocaleString()}</td>
+      <td class="r">₦${parseFloat(item.line_total).toLocaleString()}</td>
     </tr>`
   }).join('')
 
@@ -47,60 +45,71 @@ function printInvoice(sale: Sale) {
   const paid = parseFloat(sale.amount_paid)
   const bal = parseFloat(sale.balance)
 
-  const html = `<!DOCTYPE html><html><head><title>Invoice ${sale.invoice_number}</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;margin:0;padding:20px;color:#111}
-    h1{font-size:22px;margin:0}.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:12px}
-    .info{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-bottom:12px;font-size:11px}
-    table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:11px}
-    th{background:#eee;padding:5px 6px;text-align:left;font-size:10px;font-weight:700}
-    td{padding:5px 6px;border-bottom:1px solid #e5e7eb}
-    .totals{margin-left:auto;width:260px}.totals td{padding:4px 6px;border:none}
-    .grand{font-weight:700;font-size:13px;border-top:2px solid #000}
-    .footer{margin-top:20px;text-align:center;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px}
-    @media print{.noPrint{display:none}}
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${sale.invoice_number}</title><style>
+    @page{size:80mm auto;margin:4mm 3mm}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Courier New',Courier,monospace;font-size:9pt;color:#000;width:74mm}
+    .center{text-align:center}.r{text-align:right}
+    .co-name{font-size:13pt;font-weight:700;letter-spacing:0.5pt;margin:4px 0 2px}
+    .co-sub{font-size:8pt;color:#444;margin-bottom:1px}
+    .divider{border:none;border-top:1px dashed #000;margin:6px 0}
+    .divider-solid{border:none;border-top:1px solid #000;margin:6px 0}
+    .label{font-size:7.5pt;color:#555;text-transform:uppercase;letter-spacing:0.3pt}
+    .doc-type{font-size:8pt;font-weight:700;letter-spacing:2pt;margin-bottom:3px}
+    .ref-line{font-size:8.5pt;margin:2px 0}
+    table{width:100%;border-collapse:collapse;font-size:8pt}
+    th{font-size:7.5pt;font-weight:700;text-transform:uppercase;padding:2px 0;border-bottom:1px solid #000;text-align:left}
+    th.r{text-align:right}
+    td{padding:3px 0;vertical-align:top;border-bottom:1px dotted #ccc}
+    .mono{font-family:'Courier New',Courier,monospace;font-size:7.5pt;letter-spacing:0.2pt}
+    .total-row{display:flex;justify-content:space-between;font-size:8.5pt;padding:2px 0}
+    .total-row.grand{font-size:10pt;font-weight:700;padding:4px 0;border-top:1px solid #000;margin-top:2px}
+    .total-row.paid{color:#222}
+    .total-row.bal-due{font-weight:700}
+    .bank-box{font-size:8pt;border:1px solid #999;padding:5px;margin:6px 0;white-space:pre-wrap;line-height:1.5}
+    .footer{font-size:8pt;text-align:center;color:#444;padding-top:6px;line-height:1.6}
+    .info-row{display:flex;justify-content:space-between;font-size:8.5pt;margin-bottom:3px}
+    .info-row span:first-child{color:#555;min-width:72px}
+    @media print{.no-print{display:none}body{width:74mm}}
   </style></head><body>
-  <div class="hdr">
-    <div style="font-size:10px;text-align:right;color:#999;margin-bottom:4px">INVOICE</div>
-    <h1>${co.name}</h1>
-    ${co.tagline ? `<div style="font-size:11px;margin-top:3px">${co.tagline}</div>` : ''}
-    ${co.phone ? `<div style="font-size:11px;margin-top:2px">📞 ${co.phone}</div>` : ''}
-    ${co.email ? `<div style="font-size:11px">${co.email}</div>` : ''}
-    ${co.address ? `<div style="font-size:11px;color:#555;margin-top:2px">${co.address}</div>` : ''}
-    <div style="font-size:12px;margin-top:6px">
-      Invoice No: <strong>${sale.invoice_number}</strong> &nbsp;|&nbsp; Date: <strong>${sale.date}</strong>
-    </div>
+  <div class="center">
+    <div class="doc-type">INVOICE</div>
+    <div class="co-name">${co.name}</div>
+    ${co.tagline ? `<div class="co-sub">${co.tagline}</div>` : ''}
+    ${co.phone ? `<div class="co-sub">${co.phone}</div>` : ''}
+    ${co.email ? `<div class="co-sub">${co.email}</div>` : ''}
+    ${co.address ? `<div class="co-sub">${co.address}</div>` : ''}
   </div>
-  <div class="info">
-    <div><strong>Customer:</strong> ${custName}</div>
-    <div><strong>Salesperson:</strong> ${sale.salesperson_name ?? '—'}</div>
-    ${custPhone ? `<div><strong>Phone:</strong> ${custPhone}</div>` : '<div></div>'}
-    <div><strong>Channel:</strong> ${(sale.sales_channel ?? '—').replace('_', ' ')}</div>
-    ${custAddr ? `<div style="grid-column:span 2"><strong>Address:</strong> ${custAddr}</div>` : ''}
-    <div><strong>Type:</strong> ${sale.type}</div>
-  </div>
+  <hr class="divider-solid">
+  <div class="info-row"><span>Invoice No:</span><span><strong>${sale.invoice_number}</strong></span></div>
+  <div class="info-row"><span>Date:</span><span>${sale.date}</span></div>
+  <div class="info-row"><span>Customer:</span><span>${custName}</span></div>
+  ${custPhone ? `<div class="info-row"><span>Phone:</span><span>${custPhone}</span></div>` : ''}
+  ${custAddr ? `<div class="info-row"><span>Address:</span><span>${custAddr}</span></div>` : ''}
+  <div class="info-row"><span>Salesperson:</span><span>${sale.salesperson_name ?? '—'}</span></div>
+  <div class="info-row"><span>Channel:</span><span>${(sale.sales_channel ?? '—').replace('_', ' ')}</span></div>
+  <hr class="divider">
   <table>
-    <thead><tr><th>Model</th><th>Storage</th><th>Colour</th><th>Grade</th><th>IMEI</th><th>Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
+    <thead><tr><th>Item</th><th>Grd</th><th>IMEI</th><th class="r">Price</th><th class="r">Total</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <table class="totals">
-    <tr><td>Subtotal</td><td style="text-align:right">₦${sub.toLocaleString()}</td></tr>
-    ${disc > 0 ? `<tr><td>Discount</td><td style="text-align:right;color:#16a34a">-₦${disc.toLocaleString()}</td></tr>` : ''}
-    ${del > 0 ? `<tr><td>Delivery Fee</td><td style="text-align:right">₦${del.toLocaleString()}</td></tr>` : ''}
-    ${tax > 0 ? `<tr><td>Tax</td><td style="text-align:right">₦${tax.toLocaleString()}</td></tr>` : ''}
-    <tr class="grand"><td>GRAND TOTAL</td><td style="text-align:right">₦${total.toLocaleString()}</td></tr>
-    <tr><td>Amount Paid</td><td style="text-align:right;color:#16a34a">₦${paid.toLocaleString()}</td></tr>
-    <tr style="font-weight:700;color:${bal > 0 ? '#dc2626' : '#16a34a'}">
-      <td>Balance Due</td><td style="text-align:right">₦${bal.toLocaleString()}</td>
-    </tr>
-  </table>
-  ${co.bankDetails ? `<div style="margin:10px 0;padding:8px 12px;background:#f8f8f8;border:1px solid #e5e7eb;border-radius:6px;font-size:10px;white-space:pre-wrap">${co.bankDetails}</div>` : ''}
-  <div class="footer">${co.receiptNote}</div>
-  <div class="noPrint" style="text-align:center;margin-top:14px">
-    <button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px">🖨 Print</button>
+  <hr class="divider">
+  ${sub !== total ? `<div class="total-row"><span>Subtotal</span><span>₦${sub.toLocaleString()}</span></div>` : ''}
+  ${disc > 0 ? `<div class="total-row"><span>Discount</span><span>-₦${disc.toLocaleString()}</span></div>` : ''}
+  ${del > 0 ? `<div class="total-row"><span>Delivery</span><span>₦${del.toLocaleString()}</span></div>` : ''}
+  ${tax > 0 ? `<div class="total-row"><span>Tax</span><span>₦${tax.toLocaleString()}</span></div>` : ''}
+  <div class="total-row grand"><span>TOTAL</span><span>₦${total.toLocaleString()}</span></div>
+  <div class="total-row paid"><span>Amount Paid</span><span>₦${paid.toLocaleString()}</span></div>
+  <div class="total-row bal-due" style="color:${bal > 0 ? '#000' : '#000'}"><span>Balance Due</span><span>₦${bal.toLocaleString()}</span></div>
+  ${co.bankDetails ? `<div class="bank-box">${co.bankDetails}</div>` : ''}
+  <hr class="divider">
+  <div class="footer">${co.receiptNote || 'Thank you for your business!'}</div>
+  <div class="no-print" style="text-align:center;margin-top:14px">
+    <button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px;font-family:sans-serif">🖨 Print Invoice</button>
   </div>
 </body></html>`
 
-  const w = window.open('', '_blank', 'width=720,height=820')
+  const w = window.open('', '_blank', 'width=380,height=700')
   if (!w) { toast.error('Pop-ups blocked'); return }
   w.document.write(html)
   w.document.close()
@@ -115,11 +124,8 @@ function printReceipt(sale: Sale, payment?: SalePayment) {
     const d = item.device
     const m = d?.model
     return `<tr>
-      <td>${m ? `${m.brand} ${m.model_name}` : '—'}</td>
-      <td>${m?.storage ?? '—'}</td>
-      <td>${d?.grade ?? '—'}</td>
-      <td style="font-family:monospace;font-size:10px">${d?.imei ?? '—'}</td>
-      <td style="text-align:right">₦${parseFloat(item.unit_price).toLocaleString()}</td>
+      <td><div class="item-name">${m ? `${m.brand} ${m.model_name}` : '—'}</div><div class="item-sub">${m?.storage ?? ''} ${m?.colour ?? ''} Grade ${d?.grade ?? '—'}</div><div class="mono">${d?.imei ?? '—'}</div></td>
+      <td class="r">₦${parseFloat(item.unit_price).toLocaleString()}</td>
     </tr>`
   }).join('')
 
@@ -129,46 +135,67 @@ function printReceipt(sale: Sale, payment?: SalePayment) {
   const payMethod = payment?.payment_method ?? sale.payment_method ?? ''
   const payDate = payment?.payment_date ?? sale.date
 
-  const html = `<!DOCTYPE html><html><head><title>Receipt ${sale.invoice_number}</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;margin:0;padding:20px;color:#111;max-width:380px;margin:0 auto}
-    h1{font-size:20px;margin:0}.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:10px}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px}
-    th{padding:4px 5px;text-align:left;font-size:10px;border-bottom:1px solid #000}
-    td{padding:4px 5px;border-bottom:1px solid #e5e7eb}
-    .total-line{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
-    .grand{font-weight:700;font-size:14px;border-top:2px solid #000;padding-top:6px;margin-top:4px}
-    .footer{margin-top:14px;text-align:center;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:6px}
-    @media print{.noPrint{display:none}}
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ${sale.invoice_number}</title><style>
+    @page{size:80mm auto;margin:4mm 3mm}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Courier New',Courier,monospace;font-size:9pt;color:#000;width:74mm}
+    .center{text-align:center}.r{text-align:right}
+    .co-name{font-size:13pt;font-weight:700;letter-spacing:0.5pt;margin:4px 0 2px}
+    .co-sub{font-size:8pt;color:#444;margin-bottom:1px}
+    .divider{border:none;border-top:1px dashed #000;margin:6px 0}
+    .divider-solid{border:none;border-top:1px solid #000;margin:6px 0}
+    .doc-type{font-size:8pt;font-weight:700;letter-spacing:2pt;margin-bottom:3px}
+    .info-row{display:flex;justify-content:space-between;font-size:8.5pt;margin-bottom:3px}
+    .info-row span:first-child{color:#555;min-width:68px}
+    table{width:100%;border-collapse:collapse;font-size:8.5pt}
+    th{font-size:7.5pt;font-weight:700;text-transform:uppercase;padding:2px 0;border-bottom:1px solid #000;text-align:left}
+    th.r{text-align:right}
+    td{padding:4px 0;vertical-align:top;border-bottom:1px dotted #bbb}
+    .item-name{font-size:9pt;font-weight:700}
+    .item-sub{font-size:7.5pt;color:#444;margin-top:1px}
+    .mono{font-size:7.5pt;letter-spacing:0.3pt;color:#333;margin-top:1px}
+    .total-row{display:flex;justify-content:space-between;font-size:9pt;padding:2px 0}
+    .total-row.grand{font-size:11pt;font-weight:700;padding:5px 0 3px;border-top:1px solid #000;margin-top:3px}
+    .total-row.sub-line{font-size:8.5pt;color:#444}
+    .total-row.paid-line{font-size:9pt;font-weight:700}
+    .total-row.bal-line{font-size:10pt;font-weight:700;border-top:1px dashed #000;padding-top:4px;margin-top:2px}
+    .pay-badge{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:8pt;font-weight:700;letter-spacing:1pt;margin:4px 0}
+    .bank-box{font-size:8pt;border:1px solid #999;padding:5px;margin:6px 0;white-space:pre-wrap;line-height:1.5}
+    .footer{font-size:8.5pt;text-align:center;padding-top:6px;line-height:1.7}
+    @media print{.no-print{display:none}body{width:74mm}}
   </style></head><body>
-  <div class="hdr">
-    <div style="font-size:10px;text-align:right;color:#999">PAYMENT RECEIPT</div>
-    <h1>${co.name}</h1>
-    ${co.tagline ? `<div style="font-size:10px">${co.tagline}</div>` : ''}
-    ${co.phone ? `<div style="font-size:10px">📞 ${co.phone}</div>` : ''}
-    <div style="font-size:11px;margin-top:5px">
-      Ref: <strong>${sale.invoice_number}</strong> &nbsp;|&nbsp; Date: <strong>${payDate}</strong>
-    </div>
+  <div class="center">
+    <div class="doc-type">PAYMENT RECEIPT</div>
+    <div class="co-name">${co.name}</div>
+    ${co.tagline ? `<div class="co-sub">${co.tagline}</div>` : ''}
+    ${co.phone ? `<div class="co-sub">${co.phone}</div>` : ''}
+    ${co.email ? `<div class="co-sub">${co.email}</div>` : ''}
+    ${co.address ? `<div class="co-sub">${co.address}</div>` : ''}
   </div>
-  <div style="font-size:11px;margin-bottom:8px">
-    <div><strong>Customer:</strong> ${custName}${custPhone ? ` — ${custPhone}` : ''}</div>
-    <div><strong>Salesperson:</strong> ${sale.salesperson_name ?? '—'}</div>
-    ${payMethod ? `<div><strong>Payment Method:</strong> ${payMethod.toUpperCase()}</div>` : ''}
-  </div>
+  <hr class="divider-solid">
+  <div class="info-row"><span>Receipt Ref:</span><span><strong>${sale.invoice_number}</strong></span></div>
+  <div class="info-row"><span>Date:</span><span>${payDate}</span></div>
+  <div class="info-row"><span>Customer:</span><span>${custName}</span></div>
+  ${custPhone ? `<div class="info-row"><span>Phone:</span><span>${custPhone}</span></div>` : ''}
+  <div class="info-row"><span>Salesperson:</span><span>${sale.salesperson_name ?? '—'}</span></div>
+  ${payMethod ? `<div class="info-row"><span>Method:</span><span>${payMethod.toUpperCase()}</span></div>` : ''}
+  <hr class="divider">
   <table>
-    <thead><tr><th>Item</th><th>Storage</th><th>Grd</th><th>IMEI</th><th style="text-align:right">Price</th></tr></thead>
+    <thead><tr><th>Items Purchased</th><th class="r">Price</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div class="total-line grand"><span>TOTAL</span><span>₦${total.toLocaleString()}</span></div>
-  <div class="total-line" style="color:#16a34a"><span>Payment Received</span><span>₦${paid.toLocaleString()}</span></div>
-  <div class="total-line" style="font-weight:600;color:${bal > 0 ? '#dc2626' : '#16a34a'}"><span>Balance</span><span>₦${bal.toLocaleString()}</span></div>
-  ${co.bankDetails ? `<div style="margin:8px 0;padding:6px 10px;background:#f8f8f8;border:1px solid #e5e7eb;border-radius:4px;font-size:9px;white-space:pre-wrap">${co.bankDetails}</div>` : ''}
-  <div class="footer">${co.receiptNote}</div>
-  <div class="noPrint" style="text-align:center;margin-top:12px">
-    <button onclick="window.print()" style="padding:6px 20px;cursor:pointer">🖨 Print</button>
+  <div class="total-row grand"><span>TOTAL</span><span>₦${total.toLocaleString()}</span></div>
+  <div class="total-row paid-line"><span>Amount Paid</span><span>₦${paid.toLocaleString()}</span></div>
+  <div class="total-row bal-line"><span>Balance Due</span><span>₦${bal.toLocaleString()}</span></div>
+  ${co.bankDetails ? `<div class="bank-box">${co.bankDetails}</div>` : ''}
+  <hr class="divider">
+  <div class="footer">${co.receiptNote || 'Thank you for your business!'}</div>
+  <div class="no-print" style="text-align:center;margin-top:14px">
+    <button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px;font-family:sans-serif">🖨 Print Receipt</button>
   </div>
 </body></html>`
 
-  const w = window.open('', '_blank', 'width=480,height=700')
+  const w = window.open('', '_blank', 'width=380,height=700')
   if (!w) { toast.error('Pop-ups blocked'); return }
   w.document.write(html)
   w.document.close()
