@@ -8,13 +8,21 @@ export interface LabelSize {
   heightMm: number
 }
 
+export const PRESET_SIZES: LabelSize[] = [
+  { id: '50x15',  name: '50×15mm Thermal',   widthMm: 50,  heightMm: 15  },
+  { id: '50x25',  name: '50×25mm Thermal',   widthMm: 50,  heightMm: 25  },
+  { id: '50x30',  name: '50×30mm Thermal',   widthMm: 50,  heightMm: 30  },
+  { id: '57x32',  name: '57×32mm Thermal',   widthMm: 57,  heightMm: 32  },
+  { id: '100x50', name: '100×50mm Standard', widthMm: 100, heightMm: 50  },
+]
+
 export function getLabelSizes(): LabelSize[] {
   try {
     const raw = localStorage.getItem(KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  saveLabelSizes(PRESET_SIZES)
+  return PRESET_SIZES
 }
 
 export function saveLabelSizes(sizes: LabelSize[]): void {

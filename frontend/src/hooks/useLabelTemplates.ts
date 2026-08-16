@@ -145,6 +145,57 @@ function buildTemplate(
   }
 }
 
+// 50×15mm thermal label — explicit absolute field positions (mm)
+// Layout: [Model Name | Storage] top row, large barcode middle, IMEI text bottom
+const THERMAL_50x15: LabelTemplate = {
+  id: 'thermal-50x15',
+  name: '50×15mm Thermal Label',
+  marginTop: 0.8, marginBottom: 0.8, marginLeft: 1, marginRight: 1,
+  paperWidthMm: 50, paperHeightMm: 15,
+  fields: [
+    // ── Model name — left 34mm of top row
+    {
+      type: 'phone_model', enabled: true,
+      x: 1, y: 0.8, w: 33, h: 3.8, zIndex: 0,
+      fontSize: 7, bold: true, italic: false,
+      align: 'left', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
+      barcodeShowText: false, barcodeModuleWidth: 3,
+    },
+    // ── Storage — right 14mm of top row
+    {
+      type: 'rom', enabled: true,
+      x: 34, y: 0.8, w: 15, h: 3.8, zIndex: 1,
+      fontSize: 7, bold: true, italic: false,
+      align: 'right', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
+      barcodeShowText: false, barcodeModuleWidth: 3,
+    },
+    // ── Barcode — full width, tall for maximum bar clarity
+    {
+      type: 'barcode', enabled: true,
+      x: 1, y: 5, w: 48, h: 7.5, zIndex: 2,
+      fontSize: 0, bold: false, italic: false,
+      align: 'center', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
+      barcodeShowText: false, barcodeModuleWidth: 3,
+    },
+    // ── IMEI text — bottom strip
+    {
+      type: 'imei_text', enabled: true,
+      x: 1, y: 12.8, w: 48, h: 2, zIndex: 3,
+      fontSize: 5.5, bold: true, italic: false,
+      align: 'center', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0.3,
+      barcodeShowText: false, barcodeModuleWidth: 3,
+    },
+    // ── Disabled fields (preserve for template editor)
+    ...(['company_name', 'brand', 'grade', 'ram', 'colour', 'condition',
+         'selling_price', 'sku', 'inventory_id', 'date_received', 'serial_number'] as FieldType[])
+      .map(t => ({ ...baseField(t, false) })),
+  ],
+}
+
 const PRESET_TEMPLATES: LabelTemplate[] = [
   buildTemplate('default', 'Default Phone Label',
     ['company_name', 'phone_model', 'grade', 'barcode'],
@@ -152,6 +203,7 @@ const PRESET_TEMPLATES: LabelTemplate[] = [
       'brand', 'ram', 'rom', 'colour', 'condition', 'selling_price',
       'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number'],
   ),
+  THERMAL_50x15,
   buildTemplate('barcode-only', 'Barcode Only', ['barcode']),
   buildTemplate('showroom', 'Showroom Label', ['company_name', 'phone_model', 'grade', 'colour', 'selling_price']),
   buildTemplate('warehouse', 'Warehouse Label', ['barcode', 'phone_model', 'inventory_id', 'date_received']),

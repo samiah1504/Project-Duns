@@ -52,7 +52,7 @@ export function fieldValue(type: FieldType, device: DeviceForLabel, co: { name: 
     case 'brand':         return device.brand
     case 'grade':         return device.grade ? `Grade ${device.grade}` : ''
     case 'ram':           return device.ram    ? `RAM: ${device.ram}` : ''
-    case 'rom':           return device.storage ? `ROM: ${device.storage}` : ''
+    case 'rom':           return device.storage ?? ''
     case 'colour':        return device.colour  ? `Colour: ${device.colour}` : ''
     case 'condition':     return device.condition || ''
     case 'selling_price': return device.selling_price ? `₦${Number(device.selling_price).toLocaleString()}` : ''
