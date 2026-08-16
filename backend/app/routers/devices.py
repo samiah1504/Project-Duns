@@ -2,12 +2,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from typing import Optional, List
 
 from app.database import get_db
 from app.models.device import Device, DeviceStatus, DeviceLocation
-from app.models.model import PhoneModel
 from app.models.audit_log import AuditLog
 from app.models.price_change import PriceChange
 from app.schemas.device import (
@@ -38,7 +36,7 @@ async def list_devices(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(any_authenticated()),
 ):
-    q = select(Device).options(selectinload(Device.model))
+    q = select(Device)
     # SALES role sees only sellable stock (backend enforcement)
     if current_user.role == UserRole.SALES and not status:
         q = q.where(Device.status == DeviceStatus.SELLABLE)
@@ -92,7 +90,7 @@ async def list_sellable_devices(
     current_user: User = Depends(any_authenticated()),
 ):
     """Only SELLABLE devices in SALES_STOCK — the safe counter view."""
-    q = select(Device).options(selectinload(Device.model)).where(
+    q = select(Device).where(
         Device.status == DeviceStatus.SELLABLE,
         Device.location == DeviceLocation.SALES_STOCK,
     )
@@ -111,7 +109,7 @@ async def list_pending_cost_entry(
     current_user: User = Depends(admin_or_operations()),
 ):
     """Devices that have no cost price set — visible to ADMIN/OPERATIONS only."""
-    q = select(Device).options(selectinload(Device.model)).where(
+    q = select(Device).where(
         (Device.purchase_cost == None) | (Device.purchase_cost == Decimal("0.00"))
     )
     result = await db.execute(q.order_by(Device.created_at.desc()))
@@ -152,7 +150,7 @@ async def get_device_by_inventory_number(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(any_authenticated()),
 ):
-    result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.inventory_number == inv_num))
+    result = await db.execute(select(Device).where(Device.inventory_number == inv_num))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with inventory number {inv_num} not found")
@@ -165,7 +163,7 @@ async def get_device(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(any_authenticated()),
 ):
-    result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.imei == imei))
+    result = await db.execute(select(Device).where(Device.imei == imei))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with IMEI {imei} not found")
@@ -179,7 +177,7 @@ async def update_device(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(inventory_or_admin()),
 ):
-    result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.imei == imei))
+    result = await db.execute(select(Device).where(Device.imei == imei))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with IMEI {imei} not found")
@@ -198,7 +196,7 @@ async def update_cost_price(
     current_user: User = Depends(admin_or_operations()),
 ):
     """Update cost price for a device — ADMIN/OPERATIONS only. Writes audit trail."""
-    result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.imei == imei))
+    result = await db.execute(select(Device).where(Device.imei == imei))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with IMEI {imei} not found")
@@ -251,7 +249,7 @@ async def transfer_device(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(inventory_or_admin()),
 ):
-    result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.imei == imei))
+    result = await db.execute(select(Device).where(Device.imei == imei))
     device = result.scalar_one_or_none()
     if not device:
         raise NotFoundError(f"Device with IMEI {imei} not found")

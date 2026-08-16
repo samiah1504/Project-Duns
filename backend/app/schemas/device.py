@@ -40,23 +40,11 @@ class CostPriceUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class ModelSummary(BaseModel):
-    id: str
-    brand: Optional[str] = None
-    model_name: Optional[str] = None
-    ram: Optional[str] = None
-    storage: Optional[str] = None
-    colour: Optional[str] = None
-
-    model_config = {"from_attributes": True}
-
-
 class DeviceOut(BaseModel):
     id: str
     imei: str
     inventory_number: Optional[str] = None
     model_id: str
-    model: Optional[ModelSummary] = None
     grade: DeviceGrade
     status: DeviceStatus
     location: DeviceLocation
@@ -106,14 +94,6 @@ def device_to_out(device, viewer_role: str) -> dict:
         "imei": device.imei,
         "inventory_number": device.inventory_number,
         "model_id": device.model_id,
-        "model": {
-            "id": device.model.id,
-            "brand": device.model.brand,
-            "model_name": device.model.model_name,
-            "ram": device.model.ram,
-            "storage": device.model.storage,
-            "colour": device.model.colour,
-        } if getattr(device, "model", None) else None,
         "grade": device.grade,
         "status": device.status,
         "location": device.location,
