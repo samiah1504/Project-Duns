@@ -48,6 +48,7 @@ export const SAMPLE_DEVICE: DeviceForLabel = {
 export function fieldValue(type: FieldType, device: DeviceForLabel, co: { name: string }): string {
   switch (type) {
     case 'company_name':  return co.name || 'COMPANY'
+    case 'model_storage': return [device.brand, device.model_name, device.storage].filter(Boolean).join(' ')
     case 'phone_model':   return `${device.brand} ${device.model_name}`.trim()
     case 'brand':         return device.brand
     case 'grade':         return device.grade ? `Grade ${device.grade}` : ''
@@ -108,10 +109,10 @@ function renderFieldHTML(
     const svg = scaledBarcodeSVG(device.imei, bw, bh, bms)
     const justify = field.align === 'left' ? 'flex-start' : field.align === 'right' ? 'flex-end' : 'center'
     if (field.barcodeShowText) {
-      const fontSize = Math.max(4, h * 0.12 * 2.835)
-      return `<div style="${baseStyle}display:flex;flex-direction:column;align-items:${justify};justify-content:center;gap:0.3mm;">
+      const fontSize = Math.max(5, h * 0.14 * 2.835)
+      return `<div style="${baseStyle}display:flex;flex-direction:column;align-items:${justify};justify-content:flex-start;gap:0.5mm;padding-top:0.3mm;">
         ${svg}
-        <span style="font-size:${fontSize.toFixed(1)}pt;font-family:monospace;letter-spacing:0.5pt;">${esc(device.imei)}</span>
+        <span style="font-size:${fontSize.toFixed(1)}pt;font-family:Arial,sans-serif;font-weight:700;letter-spacing:0.8pt;text-align:center;width:100%;">${esc(device.imei)}</span>
       </div>`
     }
     return `<div style="${baseStyle}display:flex;align-items:center;justify-content:${justify};">${svg}</div>`

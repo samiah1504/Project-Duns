@@ -5,6 +5,7 @@ export type FieldType =
   | 'company_name' | 'phone_model' | 'brand' | 'barcode' | 'grade'
   | 'ram' | 'rom' | 'colour' | 'condition' | 'selling_price'
   | 'sku' | 'inventory_id' | 'date_received' | 'imei_text' | 'serial_number'
+  | 'model_storage'
 
 export interface LabelField {
   type: FieldType
@@ -58,12 +59,13 @@ export const FIELD_LABELS: Record<FieldType, string> = {
   date_received: 'Date Received',
   imei_text: 'IMEI (text)',
   serial_number: 'Serial Number',
+  model_storage: 'Model + Storage',
 }
 
 export const isBarcode = (f: LabelField) => f.type === 'barcode'
 
 const ALL_FIELD_TYPES: FieldType[] = [
-  'company_name', 'phone_model', 'brand', 'barcode', 'grade',
+  'company_name', 'model_storage', 'phone_model', 'brand', 'barcode', 'grade',
   'ram', 'rom', 'colour', 'condition', 'selling_price',
   'sku', 'inventory_id', 'date_received', 'imei_text', 'serial_number',
 ]
@@ -145,53 +147,37 @@ function buildTemplate(
   }
 }
 
-// 50×15mm thermal label — explicit absolute field positions (mm)
-// Layout: [Model Name | Storage] top row, large barcode middle, IMEI text bottom
+// 50×15mm thermal label — matches photo reference layout
+// Row 1: "iPhone 13 Pro 128GB" centered bold
+// Row 2: Large barcode (IMEI printed underneath by barcode renderer)
 const THERMAL_50x15: LabelTemplate = {
   id: 'thermal-50x15',
   name: '50×15mm Thermal Label',
-  marginTop: 0.8, marginBottom: 0.8, marginLeft: 1, marginRight: 1,
+  marginTop: 0.5, marginBottom: 0.5, marginLeft: 0.5, marginRight: 0.5,
   paperWidthMm: 50, paperHeightMm: 15,
   fields: [
-    // ── Model name — left 34mm of top row
+    // ── "iPhone 13 Pro 128GB" — one bold centered line at top
     {
-      type: 'phone_model', enabled: true,
-      x: 1, y: 0.8, w: 33, h: 3.8, zIndex: 0,
-      fontSize: 7, bold: true, italic: false,
-      align: 'left', color: '#000000',
-      lineHeight: 1.0, letterSpacing: 0,
-      barcodeShowText: false, barcodeModuleWidth: 3,
-    },
-    // ── Storage — right 14mm of top row
-    {
-      type: 'rom', enabled: true,
-      x: 34, y: 0.8, w: 15, h: 3.8, zIndex: 1,
-      fontSize: 7, bold: true, italic: false,
-      align: 'right', color: '#000000',
-      lineHeight: 1.0, letterSpacing: 0,
-      barcodeShowText: false, barcodeModuleWidth: 3,
-    },
-    // ── Barcode — full width, tall for maximum bar clarity
-    {
-      type: 'barcode', enabled: true,
-      x: 1, y: 5, w: 48, h: 7.5, zIndex: 2,
-      fontSize: 0, bold: false, italic: false,
-      align: 'center', color: '#000000',
-      lineHeight: 1.0, letterSpacing: 0,
-      barcodeShowText: false, barcodeModuleWidth: 3,
-    },
-    // ── IMEI text — bottom strip
-    {
-      type: 'imei_text', enabled: true,
-      x: 1, y: 12.8, w: 48, h: 2, zIndex: 3,
-      fontSize: 5.5, bold: true, italic: false,
+      type: 'model_storage', enabled: true,
+      x: 0.5, y: 0.5, w: 49, h: 3.5, zIndex: 0,
+      fontSize: 8, bold: true, italic: false,
       align: 'center', color: '#000000',
       lineHeight: 1.0, letterSpacing: 0.3,
       barcodeShowText: false, barcodeModuleWidth: 3,
     },
-    // ── Disabled fields (preserve for template editor)
-    ...(['company_name', 'brand', 'grade', 'ram', 'colour', 'condition',
-         'selling_price', 'sku', 'inventory_id', 'date_received', 'serial_number'] as FieldType[])
+    // ── Barcode with IMEI text printed underneath (barcodeShowText: true)
+    {
+      type: 'barcode', enabled: true,
+      x: 0.5, y: 4.2, w: 49, h: 10.3, zIndex: 1,
+      fontSize: 0, bold: false, italic: false,
+      align: 'center', color: '#000000',
+      lineHeight: 1.0, letterSpacing: 0,
+      barcodeShowText: true, barcodeModuleWidth: 3,
+    },
+    // ── Disabled fields (preserved for template editor access)
+    ...(['company_name', 'phone_model', 'brand', 'grade', 'ram', 'rom',
+         'colour', 'condition', 'selling_price', 'sku', 'inventory_id',
+         'date_received', 'imei_text', 'serial_number'] as FieldType[])
       .map(t => ({ ...baseField(t, false) })),
   ],
 }
