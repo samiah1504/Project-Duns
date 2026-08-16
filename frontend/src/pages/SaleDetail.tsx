@@ -18,6 +18,36 @@ function apiErr(e: any, fallback = 'An error occurred'): string {
 const payColor = (s: string) => s === 'paid' ? '#16a34a' : s === 'partial' ? '#d97706' : '#dc2626'
 const payLabel = (s: string) => s.replace('_', ' ').toUpperCase()
 
+function thermalCSS(): string {
+  return [
+    '@page{size:80mm auto;margin:4mm 3mm}',
+    '*{box-sizing:border-box;margin:0;padding:0}',
+    'body{font-family:"Courier New",Courier,monospace;font-size:9pt;color:#000;width:74mm}',
+    '.c{text-align:center}.r{text-align:right}',
+    '.co{font-size:13pt;font-weight:700;letter-spacing:0.5pt;margin:4px 0 2px}',
+    '.sub{font-size:8pt;color:#444;margin-bottom:1px}',
+    '.dt{font-size:8pt;font-weight:700;letter-spacing:2pt;margin-bottom:3px}',
+    'hr.s{border:none;border-top:1px solid #000;margin:6px 0}',
+    'hr.d{border:none;border-top:1px dashed #000;margin:6px 0}',
+    '.ir{display:flex;justify-content:space-between;font-size:8.5pt;margin-bottom:3px}',
+    '.ir span:first-child{color:#555;min-width:70px}',
+    'table{width:100%;border-collapse:collapse;font-size:8.5pt}',
+    'th{font-size:7.5pt;font-weight:700;text-transform:uppercase;padding:2px 0;border-bottom:1px solid #000;text-align:left}',
+    'th.r{text-align:right}',
+    'td{padding:3px 0;vertical-align:top;border-bottom:1px dotted #bbb}',
+    '.in{font-size:9pt;font-weight:700}',
+    '.is{font-size:7.5pt;color:#444;margin-top:1px}',
+    '.im{font-size:7.5pt;letter-spacing:0.3pt;color:#333;margin-top:1px}',
+    '.tl{display:flex;justify-content:space-between;font-size:9pt;padding:2px 0}',
+    '.tl.g{font-size:11pt;font-weight:700;padding:5px 0 3px;border-top:1px solid #000;margin-top:3px}',
+    '.tl.p{font-size:9pt;font-weight:700}',
+    '.tl.b{font-size:10pt;font-weight:700;border-top:1px dashed #000;padding-top:4px;margin-top:2px}',
+    '.bk{font-size:8pt;border:1px solid #999;padding:5px;margin:6px 0;white-space:pre-wrap;line-height:1.5}',
+    '.ft{font-size:8.5pt;text-align:center;padding-top:6px;line-height:1.7}',
+    '@media print{.np{display:none}body{width:74mm}}',
+  ].join('')
+}
+
 function printInvoice(sale: Sale) {
   const co = getCompanySettings()
   const custName = sale.customer?.name ?? 'Walk-in Customer'
@@ -27,16 +57,18 @@ function printInvoice(sale: Sale) {
   const rows = sale.line_items.map(item => {
     const d = item.device
     const m = d?.model
-    return `<tr>
-      <td>${m ? `${m.brand} ${m.model_name}` : '—'}</td>
-      <td>${m?.storage ?? '—'}</td>
-      <td>${m?.colour ?? '—'}</td>
-      <td>${d?.grade ?? '—'}</td>
-      <td style="font-family:monospace">${d?.imei ?? '—'}</td>
-      <td style="text-align:center">${item.quantity}</td>
-      <td style="text-align:right">₦${parseFloat(item.unit_price).toLocaleString()}</td>
-      <td style="text-align:right">₦${parseFloat(item.line_total).toLocaleString()}</td>
-    </tr>`
+    const modelName = m ? (m.brand + ' ' + m.model_name) : '—'
+    const storage = m?.storage ?? ''
+    const colour = m?.colour ?? ''
+    const grade = d?.grade ?? '—'
+    const imei = d?.imei ?? '—'
+    const price = '₦' + parseFloat(item.unit_price).toLocaleString()
+    const lineTotal = '₦' + parseFloat(item.line_total).toLocaleString()
+    return '<tr><td><div class="in">' + modelName + '</div>'
+      + '<div class="is">' + [storage, colour, 'Grade ' + grade].filter(Boolean).join(' ') + '</div>'
+      + '<div class="im">' + imei + '</div></td>'
+      + '<td class="r">' + price + '</td>'
+      + '<td class="r">' + lineTotal + '</td></tr>'
   }).join('')
 
   const sub = parseFloat(sale.subtotal)
@@ -46,63 +78,43 @@ function printInvoice(sale: Sale) {
   const total = parseFloat(sale.total)
   const paid = parseFloat(sale.amount_paid)
   const bal = parseFloat(sale.balance)
+  const N = '₦'
 
-  const html = `<!DOCTYPE html><html><head><title>Invoice ${sale.invoice_number}</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;margin:0;padding:20px;color:#111}
-    h1{font-size:22px;margin:0}.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:12px}
-    .info{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-bottom:12px;font-size:11px}
-    table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:11px}
-    th{background:#eee;padding:5px 6px;text-align:left;font-size:10px;font-weight:700}
-    td{padding:5px 6px;border-bottom:1px solid #e5e7eb}
-    .totals{margin-left:auto;width:260px}.totals td{padding:4px 6px;border:none}
-    .grand{font-weight:700;font-size:13px;border-top:2px solid #000}
-    .footer{margin-top:20px;text-align:center;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px}
-    @media print{.noPrint{display:none}}
-  </style></head><body>
-  <div class="hdr">
-    <div style="font-size:10px;text-align:right;color:#999;margin-bottom:4px">INVOICE</div>
-    <h1>${co.name}</h1>
-    ${co.tagline ? `<div style="font-size:11px;margin-top:3px">${co.tagline}</div>` : ''}
-    ${co.phone ? `<div style="font-size:11px;margin-top:2px">📞 ${co.phone}</div>` : ''}
-    ${co.email ? `<div style="font-size:11px">${co.email}</div>` : ''}
-    ${co.address ? `<div style="font-size:11px;color:#555;margin-top:2px">${co.address}</div>` : ''}
-    <div style="font-size:12px;margin-top:6px">
-      Invoice No: <strong>${sale.invoice_number}</strong> &nbsp;|&nbsp; Date: <strong>${sale.date}</strong>
-    </div>
-  </div>
-  <div class="info">
-    <div><strong>Customer:</strong> ${custName}</div>
-    <div><strong>Salesperson:</strong> ${sale.salesperson_name ?? '—'}</div>
-    ${custPhone ? `<div><strong>Phone:</strong> ${custPhone}</div>` : '<div></div>'}
-    <div><strong>Channel:</strong> ${(sale.sales_channel ?? '—').replace('_', ' ')}</div>
-    ${custAddr ? `<div style="grid-column:span 2"><strong>Address:</strong> ${custAddr}</div>` : ''}
-    <div><strong>Type:</strong> ${sale.type}</div>
-  </div>
-  <table>
-    <thead><tr><th>Model</th><th>Storage</th><th>Colour</th><th>Grade</th><th>IMEI</th><th>Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <table class="totals">
-    <tr><td>Subtotal</td><td style="text-align:right">₦${sub.toLocaleString()}</td></tr>
-    ${disc > 0 ? `<tr><td>Discount</td><td style="text-align:right;color:#16a34a">-₦${disc.toLocaleString()}</td></tr>` : ''}
-    ${del > 0 ? `<tr><td>Delivery Fee</td><td style="text-align:right">₦${del.toLocaleString()}</td></tr>` : ''}
-    ${tax > 0 ? `<tr><td>Tax</td><td style="text-align:right">₦${tax.toLocaleString()}</td></tr>` : ''}
-    <tr class="grand"><td>GRAND TOTAL</td><td style="text-align:right">₦${total.toLocaleString()}</td></tr>
-    <tr><td>Amount Paid</td><td style="text-align:right;color:#16a34a">₦${paid.toLocaleString()}</td></tr>
-    <tr style="font-weight:700;color:${bal > 0 ? '#dc2626' : '#16a34a'}">
-      <td>Balance Due</td><td style="text-align:right">₦${bal.toLocaleString()}</td>
-    </tr>
-  </table>
-  ${co.bankDetails ? `<div style="margin:10px 0;padding:8px 12px;background:#f8f8f8;border:1px solid #e5e7eb;border-radius:6px;font-size:10px;white-space:pre-wrap">${co.bankDetails}</div>` : ''}
-  <div class="footer">${co.receiptNote}</div>
-  <div class="noPrint" style="text-align:center;margin-top:14px">
-    <button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px">🖨 Print</button>
-  </div>
-</body></html>`
+  const parts: string[] = []
+  parts.push('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ' + sale.invoice_number + '</title>')
+  parts.push('<style>' + thermalCSS() + '</style></head><body>')
+  parts.push('<div class="c"><div class="dt">INVOICE</div>')
+  parts.push('<div class="co">' + co.name + '</div>')
+  if (co.tagline) parts.push('<div class="sub">' + co.tagline + '</div>')
+  if (co.phone) parts.push('<div class="sub">' + co.phone + '</div>')
+  if (co.email) parts.push('<div class="sub">' + co.email + '</div>')
+  if (co.address) parts.push('<div class="sub">' + co.address + '</div>')
+  parts.push('</div><hr class="s">')
+  parts.push('<div class="ir"><span>Invoice No:</span><span><strong>' + sale.invoice_number + '</strong></span></div>')
+  parts.push('<div class="ir"><span>Date:</span><span>' + sale.date + '</span></div>')
+  parts.push('<div class="ir"><span>Customer:</span><span>' + custName + '</span></div>')
+  if (custPhone) parts.push('<div class="ir"><span>Phone:</span><span>' + custPhone + '</span></div>')
+  if (custAddr) parts.push('<div class="ir"><span>Address:</span><span>' + custAddr + '</span></div>')
+  if (sale.salesperson_name) parts.push('<div class="ir"><span>Salesperson:</span><span>' + sale.salesperson_name + '</span></div>')
+  parts.push('<hr class="d">')
+  parts.push('<table><thead><tr><th>Item</th><th class="r">Price</th><th class="r">Total</th></tr></thead>')
+  parts.push('<tbody>' + rows + '</tbody></table><hr class="d">')
+  if (sub !== total) parts.push('<div class="tl"><span>Subtotal</span><span>' + N + sub.toLocaleString() + '</span></div>')
+  if (disc > 0) parts.push('<div class="tl"><span>Discount</span><span>-' + N + disc.toLocaleString() + '</span></div>')
+  if (del > 0) parts.push('<div class="tl"><span>Delivery</span><span>' + N + del.toLocaleString() + '</span></div>')
+  if (tax > 0) parts.push('<div class="tl"><span>Tax</span><span>' + N + tax.toLocaleString() + '</span></div>')
+  parts.push('<div class="tl g"><span>TOTAL</span><span>' + N + total.toLocaleString() + '</span></div>')
+  parts.push('<div class="tl p"><span>Amount Paid</span><span>' + N + paid.toLocaleString() + '</span></div>')
+  parts.push('<div class="tl b"><span>Balance Due</span><span>' + N + bal.toLocaleString() + '</span></div>')
+  if (co.bankDetails) parts.push('<div class="bk">' + co.bankDetails + '</div>')
+  parts.push('<hr class="d"><div class="ft">' + (co.receiptNote || 'Thank you for your business!') + '</div>')
+  parts.push('<div class="np" style="text-align:center;margin-top:14px">')
+  parts.push('<button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px;font-family:sans-serif">Print Invoice</button>')
+  parts.push('</div></body></html>')
 
-  const w = window.open('', '_blank', 'width=720,height=820')
+  const w = window.open('', '_blank', 'width=380,height=700')
   if (!w) { toast.error('Pop-ups blocked'); return }
-  w.document.write(html)
+  w.document.write(parts.join(''))
   w.document.close()
 }
 
@@ -114,13 +126,14 @@ function printReceipt(sale: Sale, payment?: SalePayment) {
   const rows = sale.line_items.map(item => {
     const d = item.device
     const m = d?.model
-    return `<tr>
-      <td>${m ? `${m.brand} ${m.model_name}` : '—'}</td>
-      <td>${m?.storage ?? '—'}</td>
-      <td>${d?.grade ?? '—'}</td>
-      <td style="font-family:monospace;font-size:10px">${d?.imei ?? '—'}</td>
-      <td style="text-align:right">₦${parseFloat(item.unit_price).toLocaleString()}</td>
-    </tr>`
+    const modelName = m ? (m.brand + ' ' + m.model_name) : '—'
+    const detail = [m?.storage ?? '', m?.colour ?? '', d?.grade ? 'Grade ' + d.grade : ''].filter(Boolean).join(' ')
+    const imei = d?.imei ?? '—'
+    const price = '₦' + parseFloat(item.unit_price).toLocaleString()
+    return '<tr><td><div class="in">' + modelName + '</div>'
+      + '<div class="is">' + detail + '</div>'
+      + '<div class="im">' + imei + '</div></td>'
+      + '<td class="r">' + price + '</td></tr>'
   }).join('')
 
   const total = parseFloat(sale.total)
@@ -128,49 +141,39 @@ function printReceipt(sale: Sale, payment?: SalePayment) {
   const bal = total - parseFloat(sale.amount_paid)
   const payMethod = payment?.payment_method ?? sale.payment_method ?? ''
   const payDate = payment?.payment_date ?? sale.date
+  const N = '₦'
 
-  const html = `<!DOCTYPE html><html><head><title>Receipt ${sale.invoice_number}</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;margin:0;padding:20px;color:#111;max-width:380px;margin:0 auto}
-    h1{font-size:20px;margin:0}.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:10px}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px}
-    th{padding:4px 5px;text-align:left;font-size:10px;border-bottom:1px solid #000}
-    td{padding:4px 5px;border-bottom:1px solid #e5e7eb}
-    .total-line{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
-    .grand{font-weight:700;font-size:14px;border-top:2px solid #000;padding-top:6px;margin-top:4px}
-    .footer{margin-top:14px;text-align:center;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:6px}
-    @media print{.noPrint{display:none}}
-  </style></head><body>
-  <div class="hdr">
-    <div style="font-size:10px;text-align:right;color:#999">PAYMENT RECEIPT</div>
-    <h1>${co.name}</h1>
-    ${co.tagline ? `<div style="font-size:10px">${co.tagline}</div>` : ''}
-    ${co.phone ? `<div style="font-size:10px">📞 ${co.phone}</div>` : ''}
-    <div style="font-size:11px;margin-top:5px">
-      Ref: <strong>${sale.invoice_number}</strong> &nbsp;|&nbsp; Date: <strong>${payDate}</strong>
-    </div>
-  </div>
-  <div style="font-size:11px;margin-bottom:8px">
-    <div><strong>Customer:</strong> ${custName}${custPhone ? ` — ${custPhone}` : ''}</div>
-    <div><strong>Salesperson:</strong> ${sale.salesperson_name ?? '—'}</div>
-    ${payMethod ? `<div><strong>Payment Method:</strong> ${payMethod.toUpperCase()}</div>` : ''}
-  </div>
-  <table>
-    <thead><tr><th>Item</th><th>Storage</th><th>Grd</th><th>IMEI</th><th style="text-align:right">Price</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <div class="total-line grand"><span>TOTAL</span><span>₦${total.toLocaleString()}</span></div>
-  <div class="total-line" style="color:#16a34a"><span>Payment Received</span><span>₦${paid.toLocaleString()}</span></div>
-  <div class="total-line" style="font-weight:600;color:${bal > 0 ? '#dc2626' : '#16a34a'}"><span>Balance</span><span>₦${bal.toLocaleString()}</span></div>
-  ${co.bankDetails ? `<div style="margin:8px 0;padding:6px 10px;background:#f8f8f8;border:1px solid #e5e7eb;border-radius:4px;font-size:9px;white-space:pre-wrap">${co.bankDetails}</div>` : ''}
-  <div class="footer">${co.receiptNote}</div>
-  <div class="noPrint" style="text-align:center;margin-top:12px">
-    <button onclick="window.print()" style="padding:6px 20px;cursor:pointer">🖨 Print</button>
-  </div>
-</body></html>`
+  const parts: string[] = []
+  parts.push('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ' + sale.invoice_number + '</title>')
+  parts.push('<style>' + thermalCSS() + '</style></head><body>')
+  parts.push('<div class="c"><div class="dt">PAYMENT RECEIPT</div>')
+  parts.push('<div class="co">' + co.name + '</div>')
+  if (co.tagline) parts.push('<div class="sub">' + co.tagline + '</div>')
+  if (co.phone) parts.push('<div class="sub">' + co.phone + '</div>')
+  if (co.email) parts.push('<div class="sub">' + co.email + '</div>')
+  if (co.address) parts.push('<div class="sub">' + co.address + '</div>')
+  parts.push('</div><hr class="s">')
+  parts.push('<div class="ir"><span>Receipt Ref:</span><span><strong>' + sale.invoice_number + '</strong></span></div>')
+  parts.push('<div class="ir"><span>Date:</span><span>' + payDate + '</span></div>')
+  parts.push('<div class="ir"><span>Customer:</span><span>' + custName + '</span></div>')
+  if (custPhone) parts.push('<div class="ir"><span>Phone:</span><span>' + custPhone + '</span></div>')
+  if (sale.salesperson_name) parts.push('<div class="ir"><span>Salesperson:</span><span>' + sale.salesperson_name + '</span></div>')
+  if (payMethod) parts.push('<div class="ir"><span>Method:</span><span>' + payMethod.toUpperCase() + '</span></div>')
+  parts.push('<hr class="d">')
+  parts.push('<table><thead><tr><th>Items Purchased</th><th class="r">Price</th></tr></thead>')
+  parts.push('<tbody>' + rows + '</tbody></table>')
+  parts.push('<div class="tl g"><span>TOTAL</span><span>' + N + total.toLocaleString() + '</span></div>')
+  parts.push('<div class="tl p"><span>Amount Paid</span><span>' + N + paid.toLocaleString() + '</span></div>')
+  parts.push('<div class="tl b"><span>Balance Due</span><span>' + N + bal.toLocaleString() + '</span></div>')
+  if (co.bankDetails) parts.push('<div class="bk">' + co.bankDetails + '</div>')
+  parts.push('<hr class="d"><div class="ft">' + (co.receiptNote || 'Thank you for your business!') + '</div>')
+  parts.push('<div class="np" style="text-align:center;margin-top:14px">')
+  parts.push('<button onclick="window.print()" style="padding:8px 24px;cursor:pointer;font-size:13px;font-family:sans-serif">Print Receipt</button>')
+  parts.push('</div></body></html>')
 
-  const w = window.open('', '_blank', 'width=480,height=700')
+  const w = window.open('', '_blank', 'width=380,height=700')
   if (!w) { toast.error('Pop-ups blocked'); return }
-  w.document.write(html)
+  w.document.write(parts.join(''))
   w.document.close()
 }
 
