@@ -19,6 +19,7 @@ import { PageHeader, Card, Btn } from '../components/Layout'
 import {
   LabelTemplate, LabelField, FieldType, FIELD_LABELS, isBarcode,
   autoPlaceFields, needsPlacement, getTemplates as getPresetTemplates,
+  PRESET_VERSION,
 } from '../hooks/useLabelTemplates'
 import {
   getLabelSizes, saveLabelSizes, getSelectedLabelSizeId, saveSelectedLabelSizeId, LabelSize,
@@ -735,14 +736,29 @@ export default function LabelDesigner() {
     const load = async () => {
       try {
         let list = await fetchTemplates()
+        const presets = getPresetTemplates()
         if (list.length === 0) {
-          const presets = getPresetTemplates()
+          // First time — seed all presets into the database
           for (let i = 0; i < presets.length; i++) {
             const created = await saveNewTemplate(presets[i].name, presets[i])
             if (i === 0) { await markDefault(created.id); list.push({ ...created, is_default: true }) }
             else list.push(created)
           }
           list = await fetchTemplates()
+        } else {
+          // Update any stale preset templates whose preset_version doesn't match
+          let needRefetch = false
+          for (const preset of presets) {
+            const existing = list.find(t => t.data?.id === preset.id || t.name === preset.name)
+            if (existing && existing.data?.preset_version !== PRESET_VERSION) {
+              await overwriteTemplate(existing.id, preset.name, preset)
+              if (existing.is_default || preset.id === 'thermal-50x15') {
+                await markDefault(existing.id)
+              }
+              needRefetch = true
+            }
+          }
+          if (needRefetch) list = await fetchTemplates()
         }
         if (cancelled) return
         setApiTemplates(list)

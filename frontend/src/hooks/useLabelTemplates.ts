@@ -1,7 +1,7 @@
 const KEY = 'tardmart_label_templates'
 const DEFAULT_KEY = 'tardmart_default_template'
 const VERSION_KEY = 'tardmart_label_version'
-const CURRENT_VERSION = '4'  // bump this whenever presets change
+export const PRESET_VERSION = '5'  // bump whenever presets change — triggers DB update
 
 export type FieldType =
   | 'company_name' | 'phone_model' | 'brand' | 'barcode' | 'grade'
@@ -43,6 +43,8 @@ export interface LabelTemplate {
   paperWidthMm?: number
   paperHeightMm?: number
   fields: LabelField[]
+  // Used to detect stale preset templates in the database and auto-update them
+  preset_version?: string
 }
 
 export const FIELD_LABELS: Record<FieldType, string> = {
@@ -145,6 +147,7 @@ function buildTemplate(
   return {
     id, name,
     ...DEFAULT_MARGINS,
+    preset_version: PRESET_VERSION,
     fields: orderedTypes.map(t => baseField(t, enabled.has(t))),
   }
 }
@@ -155,6 +158,7 @@ function buildTemplate(
 const THERMAL_50x15: LabelTemplate = {
   id: 'thermal-50x15',
   name: '50×15mm Thermal Label',
+  preset_version: PRESET_VERSION,
   marginTop: 0.5, marginBottom: 0.5, marginLeft: 0.5, marginRight: 0.5,
   paperWidthMm: 50, paperHeightMm: 15,
   fields: [
@@ -197,6 +201,7 @@ const THERMAL_50x15: LabelTemplate = {
 const DEFAULT_LABEL: LabelTemplate = {
   id: 'default',
   name: 'Default Phone Label',
+  preset_version: PRESET_VERSION,
   marginTop: 0.5, marginBottom: 0.5, marginLeft: 0.5, marginRight: 0.5,
   fields: [
     {
@@ -241,26 +246,7 @@ function migrateField(f: Partial<LabelField> & { type: FieldType; enabled: boole
 }
 
 export function getTemplates(): LabelTemplate[] {
-  // If version changed, wipe old data and start fresh with new presets
-  if (localStorage.getItem(VERSION_KEY) !== CURRENT_VERSION) {
-    localStorage.removeItem(KEY)
-    localStorage.removeItem(DEFAULT_KEY)
-    localStorage.setItem(VERSION_KEY, CURRENT_VERSION)
-    saveDefaultTemplateId('thermal-50x15')
-  }
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) {
-      return JSON.parse(raw).map((t: LabelTemplate) => ({
-        ...DEFAULT_MARGINS,
-        ...t,
-        fields: t.fields.map(migrateField),
-      }))
-    }
-  } catch { /* ignore */ }
-  const templates = PRESET_TEMPLATES.map(t => ({ ...t, fields: t.fields.map(f => ({ ...f })) }))
-  saveTemplates(templates)
-  return templates
+  return PRESET_TEMPLATES.map(t => ({ ...t, fields: t.fields.map(f => ({ ...f })) }))
 }
 
 export function saveTemplates(templates: LabelTemplate[]): void {
