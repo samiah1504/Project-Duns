@@ -69,27 +69,37 @@ async def create_new_sale(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(sales_or_admin()),
 ):
-    sale = await create_sale(
-        db,
-        customer_id=body.customer_id,
-        customer_name=body.customer_name,
-        customer_phone=body.customer_phone,
-        customer_address=body.customer_address,
-        sale_type=body.type,
-        line_items_data=body.line_items,
-        created_by_user_id=current_user.id,
-        tax=body.tax,
-        discount=body.discount,
-        delivery_fee=body.delivery_fee,
-        amount_paid=body.amount_paid,
-        salesperson_name=body.salesperson_name,
-        payment_method=body.payment_method,
-        sales_channel=body.sales_channel,
-        sale_date=body.date,
-        notes=body.notes,
-    )
-    await db.commit()
-    return await _fetch_sale(db, sale.id)
+    import traceback
+    import logging as _logging
+    _log = _logging.getLogger("tardmart.sales")
+    try:
+        sale = await create_sale(
+            db,
+            customer_id=body.customer_id,
+            customer_name=body.customer_name,
+            customer_phone=body.customer_phone,
+            customer_address=body.customer_address,
+            sale_type=body.type,
+            line_items_data=body.line_items,
+            created_by_user_id=current_user.id,
+            tax=body.tax,
+            discount=body.discount,
+            delivery_fee=body.delivery_fee,
+            amount_paid=body.amount_paid,
+            salesperson_name=body.salesperson_name,
+            payment_method=body.payment_method,
+            sales_channel=body.sales_channel,
+            sale_date=body.date,
+            notes=body.notes,
+        )
+        await db.commit()
+        return await _fetch_sale(db, sale.id)
+    except (BadRequestError, NotFoundError):
+        raise
+    except Exception as exc:
+        _log.error("Sale creation failed: %s\n%s", exc, traceback.format_exc())
+        await db.rollback()
+        raise BadRequestError(f"Sale creation failed: {exc}")
 
 
 @router.get("/{sale_id}", response_model=SaleOut)

@@ -345,8 +345,11 @@ async def lifespan(app: FastAPI):
                END $$""",
     ]
     for stmt in _migrations:
-        async with engine.begin() as conn:
-            await conn.execute(text(stmt))
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(stmt))
+        except Exception as exc:
+            logger.warning("Migration skipped: %s | error: %s", stmt[:120], exc)
     yield
 
 
