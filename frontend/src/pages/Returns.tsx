@@ -713,7 +713,7 @@ export default function Returns() {
   const [showNew, setShowNew] = useState(false)
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
 
-  const { data: batches = [], isLoading } = useQuery<ReturnBatch[]>({
+  const { data: batches = [], isLoading, isError, error, refetch } = useQuery<ReturnBatch[]>({
     queryKey: ['return-batches'],
     queryFn: () => getReturnBatches().then(r => r.data),
   })
@@ -732,6 +732,17 @@ export default function Returns() {
   return (
     <div style={{ padding: 28 }}>
       <PageHeader title="Returns / RMA" action={<Btn onClick={() => setShowNew(true)}>+ New Return</Btn>} />
+
+      {isError && (
+        <div style={{
+          margin: '0 0 14px', padding: '10px 14px', background: '#fef2f2',
+          border: '1px solid #fecaca', borderRadius: 8, color: '#991b1b', fontSize: 13,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <span>Could not load returns: {apiErr(error, 'server error')}</span>
+          <Btn size="sm" variant="secondary" onClick={() => refetch()}>Retry</Btn>
+        </div>
+      )}
 
       <Card style={{ padding: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -785,7 +796,7 @@ export default function Returns() {
           </tbody>
         </table>
 
-        {!isLoading && (batches as ReturnBatch[]).length === 0 && (
+        {!isLoading && !isError && (batches as ReturnBatch[]).length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
             No returns yet. Click "+ New Return" to create one.
           </div>

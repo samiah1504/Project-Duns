@@ -354,6 +354,14 @@ async def lifespan(app: FastAPI):
             "DO $$ BEGIN DROP TYPE IF EXISTS returnreasoncode CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN DROP TYPE IF EXISTS returnresolution CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN DROP TYPE IF EXISTS restockoutcome CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS returnbatchstatus CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            # Normalise return_rmas enum values: old native enums stored member NAMES
+            # (FAULT_DEVELOPED); the Python enums expect values (fault_developed).
+            # 'DOA' is uppercase in the Python enum too, so it must NOT be lowercased.
+            "UPDATE return_rmas SET reason_code = LOWER(reason_code) WHERE reason_code IS NOT NULL AND reason_code <> 'DOA' AND reason_code ~ '[a-z]' IS FALSE",
+            "UPDATE return_rmas SET resolution = LOWER(resolution) WHERE resolution IS NOT NULL AND resolution ~ '[a-z]' IS FALSE",
+            "UPDATE return_rmas SET restock_outcome = LOWER(restock_outcome) WHERE restock_outcome IS NOT NULL AND restock_outcome ~ '[a-z]' IS FALSE",
+            "UPDATE return_batches SET status = LOWER(status) WHERE status IS NOT NULL AND status ~ '[a-z]' IS FALSE",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
