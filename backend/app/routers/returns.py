@@ -29,7 +29,23 @@ async def list_batches(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(any_authenticated()),
 ):
-    return await list_return_batches(db)
+    import traceback
+    import logging as _logging
+    _log = _logging.getLogger("tardmart.returns")
+    try:
+        batches = await list_return_batches(db)
+        # Validate each batch individually so one bad legacy row cannot
+        # take down the whole list — skip and log any row that fails.
+        out = []
+        for b in batches:
+            try:
+                out.append(ReturnBatchOut.model_validate(b))
+            except Exception as exc:
+                _log.error("Skipping unserialisable return batch %s: %s", b.id, exc)
+        return out
+    except Exception as exc:
+        _log.error("Return list failed: %s\n%s", exc, traceback.format_exc())
+        raise BadRequestError(f"Return list failed: {exc}")
 
 
 @router.post("/batches", response_model=ReturnBatchOut, status_code=201)

@@ -14,7 +14,7 @@ function apiErr(e: any, fallback = 'An error occurred'): string {
   const d = e?.response?.data?.detail
   if (!d) return fallback
   if (typeof d === 'string') return d
-  if (Array.isArray(d)) return d.map((x: any) => x.msg ?? String(x)).join('; ')
+  if (Array.isArray(d)) return d.map((x: any) => `${(x.loc ?? []).slice(1).join('.')}: ${x.msg ?? String(x)}`).join('; ')
   return fallback
 }
 
