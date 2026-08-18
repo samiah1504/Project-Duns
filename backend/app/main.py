@@ -311,6 +311,13 @@ async def lifespan(app: FastAPI):
                 status VARCHAR(30) NOT NULL DEFAULT 'received',
                 created_at TIMESTAMP NOT NULL DEFAULT NOW()
             )""",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS batch_number VARCHAR(50)",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS original_sale_id UUID REFERENCES sales(id)",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS date DATE NOT NULL DEFAULT CURRENT_DATE",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS received_by_user_id UUID REFERENCES users(id)",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS notes TEXT",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'received'",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES return_batches(id)",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS replacement_device_id UUID REFERENCES devices(id)",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS condition_on_return TEXT",
