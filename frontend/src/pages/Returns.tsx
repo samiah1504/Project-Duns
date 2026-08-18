@@ -106,6 +106,78 @@ const cellSt: React.CSSProperties = {
   padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 12, width: '100%',
 }
 
+// ── replacement device picker (scan/type IMEI, dropdown fallback) ─────────────
+
+function ReplacementPicker({ devices, value, onChange, compact }: {
+  devices: any[]
+  value: string
+  onChange: (deviceId: string) => void
+  compact?: boolean
+}) {
+  const [scanValue, setScanValue] = useState('')
+  const [scanError, setScanError] = useState('')
+
+  const selected = devices.find(d => d.id === value)
+
+  const doScan = () => {
+    const val = scanValue.trim()
+    if (!val) return
+    const found = devices.find(d => d.imei === val || d.inventory_number === val)
+    if (!found) { setScanError(`${val} not found in sellable stock`); return }
+    setScanError('')
+    setScanValue('')
+    onChange(found.id)
+  }
+
+  const fs = compact ? 12 : 13
+
+  return (
+    <div>
+      {selected ? (
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+          padding: '6px 10px', background: '#f0fdf4', border: '1px solid #86efac',
+          borderRadius: 6, fontSize: fs, marginBottom: 4,
+        }}>
+          <span>
+            ✓ <strong>{selected.model?.brand} {selected.model?.model_name}</strong>
+            {selected.model?.storage ? ` ${selected.model.storage}` : ''} · Grade {selected.grade}
+            <span style={{ fontFamily: 'monospace', marginLeft: 6, color: '#166534' }}>
+              {selected.imei ?? selected.inventory_number}
+            </span>
+          </span>
+          <button type="button" onClick={() => onChange('')}
+            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 700, fontSize: fs }}>✕</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+            <input
+              value={scanValue}
+              onChange={e => { setScanValue(e.target.value); setScanError('') }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); doScan() } }}
+              placeholder="Scan or type IMEI / inventory number…"
+              style={{ ...cellSt, fontSize: fs, flex: 1, padding: '6px 8px' }}
+            />
+            <Btn size="sm" onClick={doScan} type="button">Add</Btn>
+          </div>
+          {scanError && (
+            <div style={{ color: '#dc2626', fontSize: 11, marginBottom: 4 }}>{scanError}</div>
+          )}
+          <select value={value} onChange={e => onChange(e.target.value)} style={{ ...cellSt, fontSize: fs }}>
+            <option value="">— or select from list —</option>
+            {devices.map(d => (
+              <option key={d.id} value={d.id}>
+                {d.imei ?? d.inventory_number} — {d.model?.brand} {d.model?.model_name} {d.grade}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── new batch modal ───────────────────────────────────────────────────────────
 
 function NewBatchModal({ open, onClose, onSuccess }: {
@@ -375,14 +447,12 @@ function NewBatchModal({ open, onClose, onSuccess }: {
                   {it.resolution === 'replace' && (
                     <div style={{ gridColumn: '1/-1' }}>
                       <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 3 }}>Replacement Device</div>
-                      <select value={it.replacement_device_id} onChange={e => updateItem(idx, 'replacement_device_id', e.target.value)} style={{ ...cellSt, fontSize: 12 }}>
-                        <option value="">— select —</option>
-                        {(sellableDevices as any[]).map(d => (
-                          <option key={d.id} value={d.id}>
-                            {d.inventory_number ?? d.imei} — {d.model?.brand} {d.model?.model_name} {d.grade}
-                          </option>
-                        ))}
-                      </select>
+                      <ReplacementPicker
+                        devices={sellableDevices as any[]}
+                        value={it.replacement_device_id}
+                        onChange={id => updateItem(idx, 'replacement_device_id', id)}
+                        compact
+                      />
                     </div>
                   )}
                 </div>
@@ -479,14 +549,16 @@ function ResolveItemModal({ item, batch, onClose }: { item: ReturnRMA; batch: Re
         )}
 
         {resolution === 'replace' && (
-          <Select label="Replacement Device (SELLABLE)" value={replacementId} onChange={e => setReplacementId(e.target.value)}>
-            <option value="">— select —</option>
-            {(sellableDevices as any[]).map(d => (
-              <option key={d.id} value={d.id}>
-                {d.inventory_number ?? d.imei} — {d.model?.brand} {d.model?.model_name} {d.grade}
-              </option>
-            ))}
-          </Select>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5 }}>
+              Replacement Device (scan IMEI or pick from list)
+            </div>
+            <ReplacementPicker
+              devices={sellableDevices as any[]}
+              value={replacementId}
+              onChange={setReplacementId}
+            />
+          </div>
         )}
 
         <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
