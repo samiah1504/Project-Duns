@@ -8,6 +8,16 @@ import {
 import { ReturnBatch, ReturnRMA, Customer, Sale, Device } from '../types'
 import { PageHeader, Card, Btn, Modal, Input, Select, fmt } from '../components/Layout'
 
+// FastAPI returns detail as string OR array of {loc,msg,type} objects.
+// Passing a non-string to toast.error crashes React (blank page), so always coerce.
+function apiErr(e: any, fallback = 'An error occurred'): string {
+  const d = e?.response?.data?.detail
+  if (!d) return fallback
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d.map((x: any) => x.msg ?? String(x)).join('; ')
+  return fallback
+}
+
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const REASONS = [
@@ -139,7 +149,7 @@ function NewBatchModal({ open, onClose, onSuccess }: {
       onSuccess(res.data.id)
       resetAll()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Error creating return'),
+    onError: (e: any) => toast.error(apiErr(e, 'Error creating return')),
   })
 
   const resetAll = () => {
@@ -423,7 +433,7 @@ function ResolveItemModal({ item, batch, onClose }: { item: ReturnRMA; batch: Re
       toast.success('Item resolved')
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Error'),
+    onError: (e: any) => toast.error(apiErr(e)),
   })
 
   const needsRestock = ['refund', 'restock', 'replace'].includes(resolution)
@@ -499,7 +509,7 @@ function BatchDetailPanel({ batch, customers }: { batch: ReturnBatch; customers:
   const statusMut = useMutation({
     mutationFn: (status: string) => updateReturnBatchStatus(batch.id, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['return-batches'] }),
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Error'),
+    onError: (e: any) => toast.error(apiErr(e)),
   })
 
   const customer = customers.find(c => c.id === batch.customer_id)

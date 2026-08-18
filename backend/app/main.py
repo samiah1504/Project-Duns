@@ -312,6 +312,47 @@ async def lifespan(app: FastAPI):
             )""",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES return_batches(id)",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS replacement_device_id UUID REFERENCES devices(id)",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS condition_on_return TEXT",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS within_warranty BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS restock_outcome VARCHAR(30)",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(10,2)",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS handled_by_user_id UUID REFERENCES users(id)",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS notes TEXT",
+            "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS original_sale_id UUID REFERENCES sales(id)",
+            # Convert native enum columns on return_rmas to VARCHAR (model uses native_enum=False)
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='return_rmas' AND column_name='reason_code'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE return_rmas ALTER COLUMN reason_code TYPE VARCHAR(30) USING reason_code::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='return_rmas' AND column_name='resolution'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE return_rmas ALTER COLUMN resolution TYPE VARCHAR(30) USING resolution::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            """DO $$ BEGIN
+               IF EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_name='return_rmas' AND column_name='restock_outcome'
+                 AND udt_name NOT IN ('varchar','text')
+               ) THEN
+                 ALTER TABLE return_rmas ALTER COLUMN restock_outcome TYPE VARCHAR(30) USING restock_outcome::text;
+               END IF;
+               EXCEPTION WHEN OTHERS THEN NULL;
+               END $$""",
+            "DO $$ BEGIN DROP TYPE IF EXISTS returnreasoncode CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS returnresolution CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
+            "DO $$ BEGIN DROP TYPE IF EXISTS restockoutcome CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",

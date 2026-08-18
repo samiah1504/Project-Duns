@@ -11,7 +11,7 @@ from app.schemas.return_rma import (
     ReturnItemResolve, ReturnItemOut,
 )
 from app.core.permissions import sales_or_admin, any_authenticated
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, BadRequestError
 from app.services.returns_service import (
     create_return, resolve_return,
     create_return_batch, get_return_batch, list_return_batches,
@@ -38,17 +38,27 @@ async def create_batch(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(sales_or_admin()),
 ):
-    batch = await create_return_batch(
-        db,
-        customer_id=body.customer_id,
-        items_data=body.items,
-        user_id=current_user.id,
-        original_sale_id=body.original_sale_id,
-        return_date=body.date,
-        notes=body.notes,
-    )
-    await db.commit()
-    return await get_return_batch(db, batch.id)
+    import traceback
+    import logging as _logging
+    _log = _logging.getLogger("tardmart.returns")
+    try:
+        batch = await create_return_batch(
+            db,
+            customer_id=body.customer_id,
+            items_data=body.items,
+            user_id=current_user.id,
+            original_sale_id=body.original_sale_id,
+            return_date=body.date,
+            notes=body.notes,
+        )
+        await db.commit()
+        return await get_return_batch(db, batch.id)
+    except (BadRequestError, NotFoundError):
+        raise
+    except Exception as exc:
+        _log.error("Return batch creation failed: %s\n%s", exc, traceback.format_exc())
+        await db.rollback()
+        raise BadRequestError(f"Return creation failed: {exc}")
 
 
 @router.get("/batches/{batch_id}", response_model=ReturnBatchOut)

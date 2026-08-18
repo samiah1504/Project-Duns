@@ -12,7 +12,7 @@ export interface CompanySettings {
 
 const DEFAULTS: CompanySettings = {
   name: 'Tardmart Ventures',
-  tagline: 'Quality Refurbished Phones',
+  tagline: '',
   phone: '',
   email: '',
   address: '',
