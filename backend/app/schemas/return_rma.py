@@ -1,4 +1,5 @@
-from datetime import datetime, date
+from datetime import datetime
+from datetime import date as date_type
 from decimal import Decimal
 from typing import Optional, List
 from pydantic import BaseModel
@@ -47,7 +48,7 @@ class ReturnItemOut(BaseModel):
     original_sale_id: Optional[str] = None
     device_id: str
     customer_id: str
-    date: date
+    date: date_type
     reason_code: ReturnReasonCode
     condition_on_return: Optional[str] = None
     within_warranty: bool
@@ -68,7 +69,7 @@ class ReturnItemOut(BaseModel):
 class ReturnBatchCreate(BaseModel):
     original_sale_id: Optional[str] = None
     customer_id: str
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     notes: Optional[str] = None
     items: List[ReturnItemCreate]
 
@@ -82,7 +83,7 @@ class ReturnBatchOut(BaseModel):
     batch_number: str
     original_sale_id: Optional[str] = None
     customer_id: str
-    date: date
+    date: date_type
     received_by_user_id: Optional[str] = None
     notes: Optional[str] = None
     status: ReturnBatchStatus
@@ -98,7 +99,7 @@ class ReturnCreate(BaseModel):
     original_sale_id: Optional[str] = None
     device_id: str
     customer_id: str
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     reason_code: ReturnReasonCode
     condition_on_return: Optional[str] = None
     within_warranty: bool = False
@@ -119,7 +120,7 @@ class ReturnOut(BaseModel):
     original_sale_id: Optional[str] = None
     device_id: str
     customer_id: str
-    date: date
+    date: date_type
     reason_code: ReturnReasonCode
     condition_on_return: Optional[str] = None
     within_warranty: bool
