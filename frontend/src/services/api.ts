@@ -183,6 +183,10 @@ export const getMySales = (params?: Record<string, string>) => api.get('/reports
 export const getMyRefurb = (params?: Record<string, string>) => api.get('/reports/my-refurb', { params })
 export const getCeoDashboard = (params?: Record<string, string>) => api.get('/reports/ceo-dashboard', { params })
 
+// Company Settings (server-side, shared across all devices)
+export const getCompanySettingsAPI = () => api.get('/settings/company')
+export const saveCompanySettingsAPI = (data: unknown) => api.put('/settings/company', data)
+
 // Label Templates
 export const getLabelTemplatesAPI = () => api.get('/label-templates')
 export const createLabelTemplateAPI = (data: unknown) => api.post('/label-templates', data)

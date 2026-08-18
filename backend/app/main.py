@@ -42,6 +42,7 @@ import app.models.return_rma    # noqa: F401 — registers ReturnBatch with Base
 import app.models.label_template  # noqa: F401 — registers LabelTemplate with Base.metadata
 import app.models.price_change    # noqa: F401 — registers PriceChange with Base.metadata
 import app.models.purchase_order  # noqa: F401 — registers POReceivedDevice with Base.metadata
+import app.models.app_setting     # noqa: F401 — registers AppSetting with Base.metadata
 
 
 @asynccontextmanager
@@ -433,7 +434,7 @@ app.add_middleware(
 from app.routers import (
     auth, devices, parts, purchase_orders,
     refurb_jobs, sales, customers, suppliers, users, returns, reports, phone_models, expenses,
-    label_templates,
+    label_templates, settings as settings_router,
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -449,6 +450,7 @@ app.include_router(returns.router, prefix="/api/returns", tags=["returns"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(phone_models.router, prefix="/api/phone-models", tags=["phone-models"])
 app.include_router(expenses.router, prefix="/api/expenses", tags=["expenses"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(label_templates.router, prefix="/api/label-templates", tags=["label-templates"])
 
 

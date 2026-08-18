@@ -1,6 +1,7 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { fetchCompanySettings } from '../hooks/useCompanySettings'
 
 // module key → nav entry
 const NAV = [
@@ -67,6 +68,12 @@ export function fmt(n: string | number | null | undefined) {
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const location = useLocation()
+
+  // Refresh the company-settings cache from the server once per app load,
+  // so receipts printed on this device always use the shared settings.
+  useEffect(() => {
+    if (user) fetchCompanySettings().catch(() => { /* offline — cached copy is used */ })
+  }, [user?.id])
 
   const modules: string[] = user?.effective_modules ?? []
   const visibleNav = NAV.filter((n) => user && (modules.length > 0 ? modules.includes(n.module) : true))

@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { PageHeader, Card, Btn } from '../components/Layout'
-import { getCompanySettings, saveCompanySettings, CompanySettings } from '../hooks/useCompanySettings'
+import {
+  getCompanySettings, saveCompanySettings, fetchCompanySettings,
+  CompanySettings, COMPANY_DEFAULTS,
+} from '../hooks/useCompanySettings'
 import { getLabelSizes, saveLabelSizes, LabelSize } from '../hooks/useLabelSizes'
 
 // ─── Label Size Manager ───────────────────────────────────────────────────────
@@ -197,23 +200,39 @@ function LabelSizeSettings() {
 export default function Settings() {
   const [form, setForm] = useState<CompanySettings>(getCompanySettings)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // Load the shared settings from the server (cache shows instantly meanwhile)
+  useEffect(() => {
+    fetchCompanySettings()
+      .then(setForm)
+      .catch(() => toast.error('Could not load settings from server — showing cached copy'))
+  }, [])
 
   const set = (k: keyof CompanySettings) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) { toast.error('Company name is required'); return }
-    saveCompanySettings(form)
-    setSaved(true)
-    toast.success('Company details saved')
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    try {
+      const settings = await saveCompanySettings(form)
+      setForm(settings)
+      setSaved(true)
+      toast.success('Saved — applies to all devices')
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      const d = e?.response?.data?.detail
+      toast.error(typeof d === 'string' ? d : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const reset = () => {
-    if (!confirm('Reset to default values?')) return
-    localStorage.removeItem('tardmart_company_settings')
-    setForm(getCompanySettings())
-    toast('Reset to defaults')
+    if (!confirm('Reset the form to default values? (Nothing is saved until you click Save)')) return
+    setForm({ ...COMPANY_DEFAULTS })
+    toast('Form reset — click Save to apply')
   }
 
   const L: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }
@@ -278,7 +297,7 @@ export default function Settings() {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Btn variant="secondary" onClick={reset}>Reset to Defaults</Btn>
-              <Btn onClick={save}>{saved ? '✓ Saved' : 'Save Changes'}</Btn>
+              <Btn onClick={save} disabled={saving}>{saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}</Btn>
             </div>
           </Card>
 
