@@ -308,7 +308,7 @@ async def lifespan(app: FastAPI):
                 date DATE NOT NULL,
                 received_by_user_id UUID REFERENCES users(id),
                 notes TEXT,
-                status VARCHAR(30) NOT NULL DEFAULT 'received',
+                status VARCHAR(30) NOT NULL DEFAULT 'RECEIVED',
                 created_at TIMESTAMP NOT NULL DEFAULT NOW()
             )""",
             "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS batch_number VARCHAR(50)",
@@ -316,7 +316,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS date DATE NOT NULL DEFAULT CURRENT_DATE",
             "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS received_by_user_id UUID REFERENCES users(id)",
             "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS notes TEXT",
-            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'received'",
+            "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'RECEIVED'",
             "ALTER TABLE return_batches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES return_batches(id)",
             "ALTER TABLE return_rmas ADD COLUMN IF NOT EXISTS replacement_device_id UUID REFERENCES devices(id)",
@@ -362,13 +362,13 @@ async def lifespan(app: FastAPI):
             "DO $$ BEGIN DROP TYPE IF EXISTS returnresolution CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN DROP TYPE IF EXISTS restockoutcome CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN DROP TYPE IF EXISTS returnbatchstatus CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$",
-            # Normalise return_rmas enum values: old native enums stored member NAMES
-            # (FAULT_DEVELOPED); the Python enums expect values (fault_developed).
-            # 'DOA' is uppercase in the Python enum too, so it must NOT be lowercased.
-            "UPDATE return_rmas SET reason_code = LOWER(reason_code) WHERE reason_code IS NOT NULL AND reason_code <> 'DOA' AND reason_code ~ '[a-z]' IS FALSE",
-            "UPDATE return_rmas SET resolution = LOWER(resolution) WHERE resolution IS NOT NULL AND resolution ~ '[a-z]' IS FALSE",
-            "UPDATE return_rmas SET restock_outcome = LOWER(restock_outcome) WHERE restock_outcome IS NOT NULL AND restock_outcome ~ '[a-z]' IS FALSE",
-            "UPDATE return_batches SET status = LOWER(status) WHERE status IS NOT NULL AND status ~ '[a-z]' IS FALSE",
+            # Normalise return enum columns to UPPERCASE member NAMES — SQLAlchemy's
+            # Enum type stores and reads names (COMPLETED, FAULT_DEVELOPED), and the
+            # names of these enums are exactly the uppercased values.
+            "UPDATE return_rmas SET reason_code = UPPER(reason_code) WHERE reason_code IS NOT NULL AND reason_code ~ '[a-z]'",
+            "UPDATE return_rmas SET resolution = UPPER(resolution) WHERE resolution IS NOT NULL AND resolution ~ '[a-z]'",
+            "UPDATE return_rmas SET restock_outcome = UPPER(restock_outcome) WHERE restock_outcome IS NOT NULL AND restock_outcome ~ '[a-z]'",
+            "UPDATE return_batches SET status = UPPER(status) WHERE status IS NOT NULL AND status ~ '[a-z]'",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='reject' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'reject'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='scrap' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='returnresolution')) THEN ALTER TYPE returnresolution ADD VALUE 'scrap'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='awaiting_refurb' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='restockoutcome')) THEN ALTER TYPE restockoutcome ADD VALUE 'awaiting_refurb'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
