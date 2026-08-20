@@ -205,13 +205,17 @@ function NewBatchModal({ open, onClose, onSuccess }: {
     [allSales, customerId]
   )
 
+  // Devices the customer can return: from the selected invoice, or — when no
+  // invoice is picked — from ALL of this customer's invoices.
   const saleDevices = useMemo(() => {
-    if (!saleId) return []
-    const sale = (allSales as Sale[]).find(s => s.id === saleId)
-    if (!sale) return []
-    const ids = new Set(sale.line_items.filter(l => l.device_id).map(l => l.device_id!))
+    const sales = saleId
+      ? (allSales as Sale[]).filter(s => s.id === saleId)
+      : customerSales
+    const ids = new Set(
+      sales.flatMap(s => s.line_items ?? []).filter(l => l.device_id).map(l => l.device_id!)
+    )
     return (soldDevices as any[]).filter(d => ids.has(d.id))
-  }, [saleId, allSales, soldDevices])
+  }, [saleId, customerSales, allSales, soldDevices])
 
   const mut = useMutation({
     mutationFn: (data: unknown) => createReturnBatch(data),
@@ -322,9 +326,11 @@ function NewBatchModal({ open, onClose, onSuccess }: {
             <Btn size="sm" onClick={addByScan}>Add</Btn>
           </div>
 
-          {saleId && saleDevices.length > 0 && (
+          {saleDevices.length > 0 && (
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Devices from invoice (click to add):</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 5 }}>
+                {saleId ? 'Devices from invoice (click to add):' : "Customer's sold devices (click to add):"}
+              </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                 {saleDevices.map(d => {
                   const already = items.some(i => i.device_id === d.id)
