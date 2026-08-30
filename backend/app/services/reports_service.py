@@ -34,6 +34,11 @@ from app.schemas.reports import (
 
 # ── Existing reports (unchanged) ─────────────────────────────────────────────
 
+def _ev(x):
+    """Enum value or the string itself — some status columns are plain VARCHAR."""
+    return x.value if hasattr(x, "value") else (x if x is not None else None)
+
+
 async def get_reconciliation(db: AsyncSession) -> ReconciliationReport:
     counts = {}
     for status in DeviceStatus:
@@ -389,7 +394,7 @@ async def get_purchase_report(
             "po_number": po.po_number,
             "supplier": sup_name,
             "date": po.date.isoformat(),
-            "status": po.status.value,
+            "status": _ev(po.status),
             "phones": po_devices,
             "value": str(po_value),
         })
@@ -502,9 +507,9 @@ async def get_refurb_report(
     result = await db.execute(q)
     jobs = result.scalars().all()
 
-    open_count = sum(1 for j in jobs if j.status.value == "open")
-    in_progress = sum(1 for j in jobs if j.status.value == "in_progress")
-    closed_count = sum(1 for j in jobs if j.status.value == "closed")
+    open_count = sum(1 for j in jobs if _ev(j.status) == "open")
+    in_progress = sum(1 for j in jobs if _ev(j.status) == "in_progress")
+    closed_count = sum(1 for j in jobs if _ev(j.status) == "closed")
     regraded = sum(1 for j in jobs if j.outcome == JobOutcome.REGRADED)
     sent_external = sum(1 for j in jobs if j.outcome == JobOutcome.SENT_EXTERNAL)
     scrapped = sum(1 for j in jobs if j.outcome == JobOutcome.SCRAPPED)
@@ -534,8 +539,8 @@ async def get_refurb_report(
             "job_number": j.job_number,
             "date_opened": j.date_opened.isoformat(),
             "date_closed": j.date_closed.isoformat() if j.date_closed else None,
-            "status": j.status.value,
-            "outcome": j.outcome.value if j.outcome else None,
+            "status": _ev(j.status),
+            "outcome": _ev(j.outcome) if j.outcome else None,
             "engineer": j.assigned_engineer.name if j.assigned_engineer else "Unassigned",
             "external_cost": str(j.external_cost),
         }
@@ -817,9 +822,9 @@ async def get_my_refurb_dashboard(
     result = await db.execute(q)
     jobs = result.scalars().all()
 
-    open_count = sum(1 for j in jobs if j.status.value == "open")
-    in_progress = sum(1 for j in jobs if j.status.value == "in_progress")
-    closed_count = sum(1 for j in jobs if j.status.value == "closed")
+    open_count = sum(1 for j in jobs if _ev(j.status) == "open")
+    in_progress = sum(1 for j in jobs if _ev(j.status) == "in_progress")
+    closed_count = sum(1 for j in jobs if _ev(j.status) == "closed")
     regraded = sum(1 for j in jobs if j.outcome == JobOutcome.REGRADED)
     sent_external = sum(1 for j in jobs if j.outcome == JobOutcome.SENT_EXTERNAL)
     scrapped = sum(1 for j in jobs if j.outcome == JobOutcome.SCRAPPED)
@@ -853,8 +858,8 @@ async def get_my_refurb_dashboard(
                 "job_number": j.job_number,
                 "date_opened": j.date_opened.isoformat(),
                 "date_closed": j.date_closed.isoformat() if j.date_closed else None,
-                "status": j.status.value,
-                "outcome": j.outcome.value if j.outcome else None,
+                "status": _ev(j.status),
+                "outcome": _ev(j.outcome) if j.outcome else None,
             }
             for j in jobs
         ],
@@ -1233,7 +1238,7 @@ async def get_ceo_dashboard(
                 {
                     "po_number": po.po_number,
                     "date": po.date.isoformat(),
-                    "status": po.status.value,
+                    "status": _ev(po.status),
                     "items": len(po.line_items),
                 }
                 for po in recent_pos
