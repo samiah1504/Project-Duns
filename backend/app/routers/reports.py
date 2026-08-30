@@ -211,7 +211,17 @@ async def ceo_dashboard(
     _: User = Depends(require_roles("ADMIN")),
 ):
     from datetime import date
+    import traceback
+    import logging as _logging
+    from fastapi import HTTPException
+    _log = _logging.getLogger("tardmart.reports")
     today = date.today()
     df = date_from or date(today.year, today.month, 1)
     dt = date_to or today
-    return await get_ceo_dashboard(db, date_from=df, date_to=dt)
+    try:
+        return await get_ceo_dashboard(db, date_from=df, date_to=dt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("CEO dashboard failed: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(status_code=400, detail=f"Dashboard failed: {exc}")

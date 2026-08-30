@@ -390,7 +390,11 @@ function CeoDashboard() {
       )}
       {error && (
         <div style={{ padding: 20, color: '#ef4444', background: '#fef2f2', borderRadius: 8, marginTop: 20 }}>
-          Failed to load dashboard data. Make sure you are logged in as Admin.
+          Failed to load dashboard data.
+          {(() => {
+            const d = (error as any)?.response?.data?.detail
+            return typeof d === 'string' ? ` ${d}` : ' Make sure you are logged in as Admin.'
+          })()}
         </div>
       )}
 
