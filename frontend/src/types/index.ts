@@ -36,6 +36,7 @@ export interface Device {
   imei: string
   inventory_number?: string
   model_id: string
+  model?: { id: string; brand: string; model_name: string; ram?: string; storage?: string; colour?: string } | null
   grade: DeviceGrade
   status: DeviceStatus
   location: DeviceLocation

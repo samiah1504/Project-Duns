@@ -24,6 +24,7 @@ class DeviceCreate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     grade: Optional[DeviceGrade] = None
+    model_id: Optional[str] = None
     notes: Optional[str] = None
     warranty_expiry: Optional[date] = None
 
@@ -40,9 +41,20 @@ class CostPriceUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class PhoneModelBrief(BaseModel):
+    id: str
+    brand: str
+    model_name: str
+    ram: Optional[str] = None
+    storage: Optional[str] = None
+    colour: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
 class DeviceOut(BaseModel):
     id: str
     imei: str
+    model: Optional[PhoneModelBrief] = None
     inventory_number: Optional[str] = None
     model_id: str
     grade: DeviceGrade
@@ -88,10 +100,18 @@ class PriceChangeOut(BaseModel):
 
 def device_to_out(device, viewer_role: str) -> dict:
     """Build DeviceOut dict, masking cost fields for non-privileged roles."""
+    from sqlalchemy import inspect as _sa_inspect
     show_cost = viewer_role in COST_PRICE_ROLES
+    # Include model data only when eagerly loaded — an async lazy load here
+    # would raise. Callers that want it must selectinload(Device.model).
+    try:
+        model_obj = None if "model" in _sa_inspect(device).unloaded else device.model
+    except Exception:
+        model_obj = None
     d = {
         "id": device.id,
         "imei": device.imei,
+        "model": model_obj,
         "inventory_number": device.inventory_number,
         "model_id": device.model_id,
         "grade": device.grade,

@@ -73,6 +73,17 @@ function EditCostModal({ device, onClose }: { device: Device; onClose: () => voi
   return (
     <Modal open onClose={onClose} title={`Set Cost Price — ${device.imei}`} maxWidth={460}>
       <div style={{ marginBottom: 14 }}>
+        {device.model && (
+          <div style={{
+            padding: '8px 12px', background: '#f8fafc', borderRadius: 6,
+            fontSize: 13, marginBottom: 10,
+          }}>
+            <strong>{device.model.brand} {device.model.model_name}</strong>
+            {device.model.storage ? ` ${device.model.storage}` : ''}
+            {' · Grade '}{device.grade}
+            {device.model.colour ? ` · ${device.model.colour}` : ''}
+          </div>
+        )}
         <div style={{ fontSize: 13, color: '#64748b', marginBottom: 10 }}>
           <strong>Selling Price:</strong> {device.selling_price ? fmt(device.selling_price) : <span style={{ color: '#d97706' }}>Not set</span>}
         </div>
@@ -175,7 +186,7 @@ export default function CostPriceManagement() {
             {tab === 'pending' ? 'All devices have cost prices set. ✓' : 'No devices found.'}
           </div>
         ) : (
-          <Table headers={['IMEI', 'Inventory #', 'Status', 'Selling Price', 'Cost Price', 'Gross Profit', 'Margin', '']}>
+          <Table headers={['Model', 'Grade', 'IMEI', 'Inventory #', 'Status', 'Selling Price', 'Cost Price', 'Gross Profit', 'Margin', '']}>
             {filtered.map(d => {
               const sp = d.selling_price ? parseFloat(d.selling_price) : null
               const cp = d.purchase_cost ? parseFloat(d.purchase_cost) : null
@@ -183,6 +194,20 @@ export default function CostPriceManagement() {
               const margin = sp && sp > 0 && gp !== null ? (gp / sp) * 100 : null
               return (
                 <TR key={d.id}>
+                  <TD>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>
+                      {d.model ? `${d.model.brand} ${d.model.model_name}` : '—'}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                      {[d.model?.ram, d.model?.storage, d.model?.colour].filter(Boolean).join(' · ')}
+                    </div>
+                  </TD>
+                  <TD>
+                    <span style={{
+                      background: d.grade === 'A' ? '#16a34a' : d.grade === 'B' ? '#d97706' : '#dc2626',
+                      color: '#fff', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 800,
+                    }}>{d.grade}</span>
+                  </TD>
                   <TD>
                     <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{d.imei}</span>
                   </TD>

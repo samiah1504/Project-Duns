@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getDevices, getPhoneModels, getSuppliers } from '../services/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
+import { getDevices, getPhoneModels, getSuppliers, updateDevice } from '../services/api'
 import { DeviceWithModel, PhoneModel, Supplier } from '../types'
-import { PageHeader, Card, Table, TR, TD, Input, Select, fmt } from '../components/Layout'
+import { PageHeader, Card, Table, TR, TD, Input, Select, Btn, Modal, fmt } from '../components/Layout'
 import { useAuth } from '../hooks/useAuth'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -44,12 +45,79 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+// ─── Edit device modal ────────────────────────────────────────────────────────
+
+function EditDeviceModal({ device, models, onClose }: {
+  device: DeviceWithModel
+  models: PhoneModel[]
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [modelId, setModelId] = useState(device.model_id)
+  const [grade, setGrade] = useState<string>(device.grade)
+  const [notes, setNotes] = useState(device.notes ?? '')
+
+  const mut = useMutation({
+    mutationFn: () => updateDevice(device.imei, {
+      model_id: modelId !== device.model_id ? modelId : undefined,
+      grade: grade !== device.grade ? grade : undefined,
+      notes: notes !== (device.notes ?? '') ? notes : undefined,
+    }),
+    onSuccess: () => {
+      toast.success('Device updated')
+      qc.invalidateQueries({ queryKey: ['all-devices'] })
+      qc.invalidateQueries({ queryKey: ['pending-cost'] })
+      qc.invalidateQueries({ queryKey: ['sellable-devices'] })
+      onClose()
+    },
+    onError: (e: any) => {
+      const d = e?.response?.data?.detail
+      toast.error(typeof d === 'string' ? d : 'Failed to update device')
+    },
+  })
+
+  const changed = modelId !== device.model_id || grade !== device.grade || notes !== (device.notes ?? '')
+
+  return (
+    <Modal open onClose={onClose} title={`Edit Device — ${device.inventory_number ?? device.imei}`} maxWidth={520}>
+      <div style={{ marginBottom: 10, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 12, color: '#475569' }}>
+        <div><strong>IMEI:</strong> <span style={{ fontFamily: 'monospace' }}>{device.imei}</span></div>
+        <div><strong>Status:</strong> {device.status.replace(/_/g, ' ')}</div>
+      </div>
+
+      <Select label="Phone Model *" value={modelId} onChange={e => setModelId(e.target.value)} required>
+        {models.map(m => (
+          <option key={m.id} value={m.id}>
+            {m.brand} {m.model_name} {[m.ram, m.storage, m.colour].filter(Boolean).join(' ')}
+          </option>
+        ))}
+      </Select>
+
+      <Select label="Grade *" value={grade} onChange={e => setGrade(e.target.value)} required>
+        <option value="A">Grade A</option>
+        <option value="B">Grade B</option>
+        <option value="C">Grade C</option>
+      </Select>
+
+      <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+        <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={() => mut.mutate()} disabled={mut.isPending || !changed}>
+          {mut.isPending ? 'Saving…' : 'Save Changes'}
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
 export default function AllDevices() {
   const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterModel, setFilterModel] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
+  const [editing, setEditing] = useState<DeviceWithModel | null>(null)
 
   const { data: devices = [], isLoading } = useQuery<DeviceWithModel[]>({
     queryKey: ['all-devices', filterStatus],
@@ -79,6 +147,7 @@ export default function AllDevices() {
   })
 
   const canSeeCost = ['ADMIN', 'OPERATIONS'].includes(user?.role ?? '')
+  const canEdit = ['ADMIN', 'OPERATIONS', 'INVENTORY'].includes(user?.role ?? '')
 
   return (
     <div>
@@ -129,7 +198,9 @@ export default function AllDevices() {
             'Date Received',
           ]}>
             {filtered.map(d => (
-              <TR key={d.id}>
+              <TR key={d.id}
+                onClick={canEdit ? () => setEditing(d) : undefined}
+                style={canEdit ? { cursor: 'pointer' } : undefined}>
                 <TD style={{ fontFamily: 'monospace', fontSize: 12 }}>{d.inventory_number ?? '—'}</TD>
                 <TD style={{ fontFamily: 'monospace', fontSize: 12 }}>{d.imei}</TD>
                 <TD>
@@ -164,6 +235,10 @@ export default function AllDevices() {
           </Table>
         )}
       </Card>
+
+      {editing && (
+        <EditDeviceModal device={editing} models={models} onClose={() => setEditing(null)} />
+      )}
     </div>
   )
 }
