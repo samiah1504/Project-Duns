@@ -25,6 +25,7 @@ class DeviceCreate(BaseModel):
 class DeviceUpdate(BaseModel):
     grade: Optional[DeviceGrade] = None
     model_id: Optional[str] = None
+    selling_price: Optional[Decimal] = None
     notes: Optional[str] = None
     warranty_expiry: Optional[date] = None
 

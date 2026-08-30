@@ -56,11 +56,16 @@ function EditDeviceModal({ device, models, onClose }: {
   const [modelId, setModelId] = useState(device.model_id)
   const [grade, setGrade] = useState<string>(device.grade)
   const [notes, setNotes] = useState(device.notes ?? '')
+  const origPrice = device.selling_price ? String(parseFloat(device.selling_price)) : ''
+  const [sellingPrice, setSellingPrice] = useState(origPrice)
+
+  const priceChanged = sellingPrice !== origPrice && sellingPrice !== ''
 
   const mut = useMutation({
     mutationFn: () => updateDevice(device.imei, {
       model_id: modelId !== device.model_id ? modelId : undefined,
       grade: grade !== device.grade ? grade : undefined,
+      selling_price: priceChanged ? parseFloat(sellingPrice) : undefined,
       notes: notes !== (device.notes ?? '') ? notes : undefined,
     }),
     onSuccess: () => {
@@ -76,7 +81,9 @@ function EditDeviceModal({ device, models, onClose }: {
     },
   })
 
-  const changed = modelId !== device.model_id || grade !== device.grade || notes !== (device.notes ?? '')
+  const changed = modelId !== device.model_id || grade !== device.grade
+    || notes !== (device.notes ?? '') || priceChanged
+  const priceInvalid = sellingPrice !== '' && (!parseFloat(sellingPrice) || parseFloat(sellingPrice) <= 0)
 
   return (
     <Modal open onClose={onClose} title={`Edit Device — ${device.inventory_number ?? device.imei}`} maxWidth={520}>
@@ -99,11 +106,26 @@ function EditDeviceModal({ device, models, onClose }: {
         <option value="C">Grade C</option>
       </Select>
 
+      <Input
+        label="Selling Price (₦)"
+        type="number"
+        value={sellingPrice}
+        onChange={e => setSellingPrice(e.target.value)}
+        min="0"
+        step="0.01"
+        placeholder="Not set"
+      />
+      {priceInvalid && (
+        <div style={{ color: '#dc2626', fontSize: 12, marginTop: -8, marginBottom: 8 }}>
+          Selling price must be greater than zero
+        </div>
+      )}
+
       <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={() => mut.mutate()} disabled={mut.isPending || !changed}>
+        <Btn onClick={() => mut.mutate()} disabled={mut.isPending || !changed || priceInvalid}>
           {mut.isPending ? 'Saving…' : 'Save Changes'}
         </Btn>
       </div>

@@ -188,6 +188,24 @@ async def update_device(
         pm = await db.get(PhoneModel, updates["model_id"])
         if not pm:
             raise NotFoundError("Phone model not found")
+    if "selling_price" in updates:
+        new_price = updates["selling_price"]
+        if new_price <= Decimal("0"):
+            raise ConflictError("Selling price must be positive")
+        old_price = device.selling_price
+        if old_price != new_price:
+            db.add(PriceChange(
+                device_id=device.id,
+                imei=device.imei,
+                user_id=current_user.id,
+                user_role=current_user.role.value,
+                field="selling_price",
+                old_value=old_price,
+                new_value=new_price,
+                action="update" if old_price is not None else "set",
+            ))
+            device.selling_price_set_by = current_user.id
+            device.selling_price_set_at = datetime.utcnow()
     for field, value in updates.items():
         setattr(device, field, value)
     await write_audit(
