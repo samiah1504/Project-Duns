@@ -35,6 +35,9 @@ class Part(Base):
     sku: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
     quantity_on_hand: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    # Customer-facing price for external sales (Parts & Accessories).
+    # None = not sellable / price not set. Never confuse with unit_cost.
+    selling_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     location: Mapped[str | None] = mapped_column(String(50), nullable=True)
     min_stock_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     source: Mapped[PartSource] = mapped_column(

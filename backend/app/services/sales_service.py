@@ -166,6 +166,7 @@ async def create_sale(
                 notes=f"Reserved for invoice {invoice_number}",
             )
 
+        part_cost_snapshot = None
         if item_data.part_id:
             part_result = await db.execute(select(Part).where(Part.id == item_data.part_id))
             part = part_result.scalar_one_or_none()
@@ -177,6 +178,20 @@ async def create_sale(
                     f"available {part.quantity_on_hand}, requested {item_data.quantity}"
                 )
             part.quantity_on_hand -= item_data.quantity
+            # COGS snapshot: cost at the moment of sale (external sale path —
+            # never mixed with internal refurb consumption).
+            part_cost_snapshot = part.unit_cost or Decimal("0.00")
+            await write_audit(
+                db,
+                user_id=created_by_user_id,
+                part_id=part.id,
+                reference_type=ReferenceType.SALE,
+                reference_id=invoice_number,
+                notes=(
+                    f"External sale: -{item_data.quantity} x {part.name} "
+                    f"(now {part.quantity_on_hand}) on invoice {invoice_number}"
+                ),
+            )
 
         line = SaleLineItem(
             sale_id=sale.id,
@@ -185,6 +200,7 @@ async def create_sale(
             quantity=item_data.quantity,
             unit_price=item_data.unit_price,
             line_total=line_total,
+            unit_cost_at_sale=part_cost_snapshot,
             notes=item_data.notes,
         )
         db.add(line)

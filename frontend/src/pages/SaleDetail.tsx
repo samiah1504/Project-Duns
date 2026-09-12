@@ -55,6 +55,15 @@ function printInvoice(sale: Sale) {
   const custAddr = sale.customer?.contact?.address ?? ''
 
   const rows = sale.line_items.map(item => {
+    const price = '₦' + parseFloat(item.unit_price).toLocaleString()
+    const lineTotal = '₦' + parseFloat(item.line_total).toLocaleString()
+    if (item.part) {
+      const qty = item.quantity > 1 ? item.quantity + ' × ' : ''
+      return '<tr><td><div class="in">' + qty + item.part.name + '</div>'
+        + '<div class="is">' + item.part.type.replace(/_/g, ' ') + (item.part.sku ? ' · ' + item.part.sku : '') + '</div></td>'
+        + '<td class="r">' + price + '</td>'
+        + '<td class="r">' + lineTotal + '</td></tr>'
+    }
     const d = item.device
     const m = d?.model
     const modelName = m ? (m.brand + ' ' + m.model_name) : '—'
@@ -62,8 +71,6 @@ function printInvoice(sale: Sale) {
     const colour = m?.colour ?? ''
     const grade = d?.grade ?? '—'
     const imei = d?.imei ?? '—'
-    const price = '₦' + parseFloat(item.unit_price).toLocaleString()
-    const lineTotal = '₦' + parseFloat(item.line_total).toLocaleString()
     return '<tr><td><div class="in">' + modelName + '</div>'
       + '<div class="is">' + [storage, colour, 'Grade ' + grade].filter(Boolean).join(' ') + '</div>'
       + '<div class="im">' + imei + '</div></td>'
@@ -124,12 +131,18 @@ function printReceipt(sale: Sale, payment?: SalePayment) {
   const custPhone = sale.customer?.contact?.phone ?? ''
 
   const rows = sale.line_items.map(item => {
+    const price = '₦' + parseFloat(item.line_total).toLocaleString()
+    if (item.part) {
+      const qty = item.quantity > 1 ? item.quantity + ' × ' : ''
+      return '<tr><td><div class="in">' + qty + item.part.name + '</div>'
+        + '<div class="is">' + item.part.type.replace(/_/g, ' ') + (item.part.sku ? ' · ' + item.part.sku : '') + '</div></td>'
+        + '<td class="r">' + price + '</td></tr>'
+    }
     const d = item.device
     const m = d?.model
     const modelName = m ? (m.brand + ' ' + m.model_name) : '—'
     const detail = [m?.storage ?? '', m?.colour ?? '', d?.grade ? 'Grade ' + d.grade : ''].filter(Boolean).join(' ')
     const imei = d?.imei ?? '—'
-    const price = '₦' + parseFloat(item.unit_price).toLocaleString()
     return '<tr><td><div class="in">' + modelName + '</div>'
       + '<div class="is">' + detail + '</div>'
       + '<div class="im">' + imei + '</div></td>'
@@ -295,6 +308,21 @@ export default function SaleDetail() {
               {sale.line_items.map(item => {
                 const d = item.device
                 const m = d?.model
+                if (item.part) {
+                  return (
+                    <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '9px 10px', fontWeight: 500 }}>{item.part.name}</td>
+                      <td style={{ padding: '9px 10px', color: '#64748b', textTransform: 'capitalize' }} colSpan={2}>
+                        {item.part.type.replace(/_/g, ' ')} <span style={{ fontSize: 10, color: '#94a3b8' }}>(accessory)</span>
+                      </td>
+                      <td style={{ padding: '9px 10px' }}>—</td>
+                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontSize: 11 }}>{item.part.sku ?? '—'}</td>
+                      <td style={{ padding: '9px 10px' }}>{item.quantity}</td>
+                      <td style={{ padding: '9px 10px' }}>{fmt(item.unit_price)}</td>
+                      <td style={{ padding: '9px 10px', fontWeight: 600 }}>{fmt(item.line_total)}</td>
+                    </tr>
+                  )
+                }
                 return (
                   <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '9px 10px', fontWeight: 500 }}>{m ? `${m.brand} ${m.model_name}` : '—'}</td>

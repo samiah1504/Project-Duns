@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 // navigate is used for row clicks to detail page
-import { getSales, createSale, getCustomers, getSellableDevices, getPhoneModels } from '../services/api'
-import { Sale, Customer, Device, PhoneModel } from '../types'
+import { getSales, createSale, getCustomers, getSellableDevices, getPhoneModels, getParts } from '../services/api'
+import { Sale, Customer, Device, PhoneModel, Part } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, fmt } from '../components/Layout'
 
 // FastAPI returns detail as string OR array of {loc,msg,type,input} objects
@@ -20,6 +20,7 @@ const payColor = (s: string) => s === 'paid' ? '#16a34a' : s === 'partial' ? '#d
 const payLabel = (s: string) => s.replace('_', ' ').toUpperCase()
 
 interface LineItem { device: Device; model: PhoneModel | undefined; unit_price: string }
+interface PartLine { part: Part; quantity: string; unit_price: string }
 
 export default function Sales() {
   const qc = useQueryClient()
@@ -30,6 +31,7 @@ export default function Sales() {
   const { data: customers = [] } = useQuery({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) })
   const { data: sellable = [] } = useQuery({ queryKey: ['sellable-devices'], queryFn: () => getSellableDevices().then(r => r.data) })
   const { data: phoneModels = [] } = useQuery({ queryKey: ['phone-models'], queryFn: () => getPhoneModels().then(r => r.data) })
+  const { data: allParts = [] } = useQuery({ queryKey: ['parts'], queryFn: () => getParts().then(r => r.data) })
 
   return (
     <div>
@@ -75,9 +77,11 @@ export default function Sales() {
           customers={customers as Customer[]}
           sellable={sellable as Device[]}
           phoneModels={phoneModels as PhoneModel[]}
+          allParts={allParts as Part[]}
           onSuccess={_sale => {
             qc.invalidateQueries({ queryKey: ['sales'] })
             qc.invalidateQueries({ queryKey: ['sellable-devices'] })
+            qc.invalidateQueries({ queryKey: ['parts'] })
             setShowNew(false)
             toast.success('Sale created — click the row to view details')
           }}
@@ -87,11 +91,12 @@ export default function Sales() {
   )
 }
 
-function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: {
+function NewSaleModal({ onClose, customers, sellable, phoneModels, allParts, onSuccess }: {
   onClose: () => void
   customers: Customer[]
   sellable: Device[]
   phoneModels: PhoneModel[]
+  allParts: Part[]
   onSuccess: (sale: Sale) => void
 }) {
   const [custMode, setCustMode] = useState<'new' | 'existing'>('new')
@@ -113,6 +118,8 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
   const [imeiError, setImeiError] = useState('')
   const imeiRef = useRef<HTMLInputElement>(null)
   const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const [partLines, setPartLines] = useState<PartLine[]>([])
+  const [partSelect, setPartSelect] = useState('')
 
   const mut = useMutation({
     mutationFn: (data: unknown) => createSale(data),
@@ -120,11 +127,30 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
     onError: (e: any) => toast.error(apiErr(e, 'Failed to create sale')),
   })
 
-  const totalQty = lineItems.length
-  const subtotal = lineItems.reduce((s, i) => s + (parseFloat(i.unit_price) || 0), 0)
+  const partsSubtotal = partLines.reduce(
+    (s, l) => s + (parseFloat(l.unit_price) || 0) * (parseInt(l.quantity) || 0), 0)
+  const totalQty = lineItems.length + partLines.reduce((s, l) => s + (parseInt(l.quantity) || 0), 0)
+  const subtotal = lineItems.reduce((s, i) => s + (parseFloat(i.unit_price) || 0), 0) + partsSubtotal
   const disc = parseFloat(discount) || 0
   const delFee = parseFloat(deliveryFee) || 0
   const grandTotal = subtotal - disc + delFee
+
+  const addPartLine = (part: Part) => {
+    setPartLines(prev => {
+      const existing = prev.find(l => l.part.id === part.id)
+      if (existing) {
+        // bump quantity instead of duplicating the line
+        return prev.map(l => l.part.id === part.id
+          ? { ...l, quantity: String((parseInt(l.quantity) || 0) + 1) }
+          : l)
+      }
+      return [...prev, {
+        part,
+        quantity: '1',
+        unit_price: part.selling_price ? String(parseFloat(part.selling_price)) : '',
+      }]
+    })
+  }
 
   const scanImei = () => {
     const imei = imeiInput.trim()
@@ -135,7 +161,16 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
     }
     const device = sellable.find(d => d.imei === imei)
     if (!device) {
-      setImeiError(`IMEI ${imei} not found in sales stock`); return
+      // Not a device — try Parts & Accessories by SKU
+      const part = allParts.find(p => p.sku && p.sku === imei)
+      if (part) {
+        if (part.quantity_on_hand <= 0) { setImeiError(`${part.name} is out of stock`); return }
+        addPartLine(part)
+        setImeiInput('')
+        setTimeout(() => imeiRef.current?.focus(), 50)
+        return
+      }
+      setImeiError(`${imei} not found in sales stock or accessories`); return
     }
     const model = phoneModels.find(m => m.id === device.model_id)
     setLineItems(prev => [...prev, { device, model, unit_price: device.selling_price ? String(parseFloat(device.selling_price)) : '' }])
@@ -159,9 +194,16 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
 
   const submit = () => {
     if (!custName.trim()) return toast.error('Customer name is required')
-    if (lineItems.length === 0) return toast.error('Add at least one item')
+    if (lineItems.length === 0 && partLines.length === 0) return toast.error('Add at least one item')
     if (lineItems.some(i => !i.unit_price || parseFloat(i.unit_price) <= 0))
-      return toast.error('Enter a selling price for every item')
+      return toast.error('Enter a selling price for every device')
+    if (partLines.some(l => !l.unit_price || parseFloat(l.unit_price) <= 0))
+      return toast.error('Enter a selling price for every part/accessory')
+    if (partLines.some(l => !parseInt(l.quantity) || parseInt(l.quantity) <= 0))
+      return toast.error('Enter a valid quantity for every part/accessory')
+    const overStock = partLines.find(l => parseInt(l.quantity) > l.part.quantity_on_hand)
+    if (overStock)
+      return toast.error(`Only ${overStock.part.quantity_on_hand} of ${overStock.part.name} in stock`)
 
     mut.mutate({
       customer_id: custMode === 'existing' && existingCustId ? existingCustId : undefined,
@@ -176,11 +218,18 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
       amount_paid: 0,
       date: saleDate,
       notes: notes.trim() || undefined,
-      line_items: lineItems.map(i => ({
-        device_id: i.device.id,
-        quantity: 1,
-        unit_price: parseFloat(i.unit_price),
-      })),
+      line_items: [
+        ...lineItems.map(i => ({
+          device_id: i.device.id,
+          quantity: 1,
+          unit_price: parseFloat(i.unit_price),
+        })),
+        ...partLines.map(l => ({
+          part_id: l.part.id,
+          quantity: parseInt(l.quantity),
+          unit_price: parseFloat(l.unit_price),
+        })),
+      ],
     })
   }
 
@@ -293,7 +342,7 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
 
         {/* ── Items ── */}
         <div style={S.section}>
-          <strong style={{ fontSize: 13, display: 'block', marginBottom: 10 }}>Items — Scan IMEI</strong>
+          <strong style={{ fontSize: 13, display: 'block', marginBottom: 10 }}>Items — Scan IMEI or accessory SKU</strong>
           <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
             <input
               ref={imeiRef}
@@ -354,9 +403,81 @@ function NewSaleModal({ onClose, customers, sellable, phoneModels, onSuccess }: 
               </table>
             </div>
           )}
-          {lineItems.length === 0 && (
+          {/* ── Parts & Accessories picker ── */}
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #cbd5e1' }}>
+            <strong style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>Parts & Accessories</strong>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+              <select
+                style={{ ...S.field, flex: 1, marginBottom: 0 }}
+                value={partSelect}
+                onChange={e => setPartSelect(e.target.value)}
+              >
+                <option value="">— select a part / accessory —</option>
+                {allParts.filter(p => p.quantity_on_hand > 0).map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.sku ? ` [${p.sku}]` : ''} — {p.selling_price ? `₦${parseFloat(p.selling_price).toLocaleString()}` : 'no price set'} (stock: {p.quantity_on_hand})
+                  </option>
+                ))}
+              </select>
+              <Btn onClick={() => {
+                const part = allParts.find(p => p.id === partSelect)
+                if (!part) return
+                addPartLine(part)
+                setPartSelect('')
+              }}>Add</Btn>
+            </div>
+
+            {partLines.length > 0 && (
+              <div style={{ overflowX: 'auto', marginTop: 6 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      {['Item', 'Type', 'Qty', 'Unit Price (₦)', 'Line Total', ''].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: '5px 8px', color: '#64748b', fontSize: 11, fontWeight: 600 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partLines.map((l, idx) => {
+                      const lineTotal = (parseFloat(l.unit_price) || 0) * (parseInt(l.quantity) || 0)
+                      return (
+                        <tr key={l.part.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '7px 8px', fontWeight: 600 }}>{l.part.name}</td>
+                          <td style={{ padding: '7px 8px', color: '#64748b', textTransform: 'capitalize' }}>{l.part.type.replace(/_/g, ' ')}</td>
+                          <td style={{ padding: '4px 8px' }}>
+                            <input
+                              type="number" min="1" max={l.part.quantity_on_hand}
+                              style={{ width: 64, padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                              value={l.quantity}
+                              onChange={e => setPartLines(prev => prev.map((x, i) => i === idx ? { ...x, quantity: e.target.value } : x))}
+                            />
+                          </td>
+                          <td style={{ padding: '4px 8px' }}>
+                            <input
+                              type="number"
+                              style={{ width: 120, padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                              value={l.unit_price}
+                              onChange={e => setPartLines(prev => prev.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x))}
+                              placeholder="0"
+                            />
+                          </td>
+                          <td style={{ padding: '7px 8px', fontWeight: 600 }}>₦{lineTotal.toLocaleString()}</td>
+                          <td style={{ padding: '7px 8px' }}>
+                            <button onClick={() => setPartLines(prev => prev.filter((_, i) => i !== idx))}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {lineItems.length === 0 && partLines.length === 0 && (
             <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13, padding: '10px 0 2px', margin: 0 }}>
-              No items — scan an IMEI above to add devices
+              No items — scan an IMEI for a phone, or add a part/accessory above
             </p>
           )}
         </div>

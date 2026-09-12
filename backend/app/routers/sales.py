@@ -33,6 +33,8 @@ def _sale_query():
             selectinload(Sale.line_items)
             .selectinload(SaleLineItem.device)
             .selectinload(Device.model),
+            selectinload(Sale.line_items)
+            .selectinload(SaleLineItem.part),
             selectinload(Sale.customer),
             selectinload(Sale.payments),
         )

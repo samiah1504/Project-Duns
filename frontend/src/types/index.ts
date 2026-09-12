@@ -90,7 +90,8 @@ export interface Part {
   type: string
   sku?: string
   quantity_on_hand: number
-  unit_cost: string
+  unit_cost?: string | null      // null when hidden from caller's role
+  selling_price?: string | null
   location?: string
   min_stock_level: number
   source: 'imported' | 'harvested'
@@ -247,6 +248,7 @@ export interface SaleLineItem {
     grade: string
     model?: { brand: string; model_name: string; ram?: string; storage?: string; colour?: string }
   }
+  part?: { id: string; name: string; sku?: string; type: string }
 }
 
 export interface ReturnRMA {

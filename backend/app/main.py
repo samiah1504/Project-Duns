@@ -64,6 +64,9 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE devices ADD COLUMN IF NOT EXISTS external_cost NUMERIC(10,2) NOT NULL DEFAULT 0",
             "ALTER TABLE sale_line_items ADD COLUMN IF NOT EXISTS part_id UUID REFERENCES parts(id)",
             "ALTER TABLE sale_line_items ADD COLUMN IF NOT EXISTS notes TEXT",
+            # Parts & Accessories: customer selling price + COGS snapshot on part sale lines
+            "ALTER TABLE parts ADD COLUMN IF NOT EXISTS selling_price NUMERIC(10,2)",
+            "ALTER TABLE sale_line_items ADD COLUMN IF NOT EXISTS unit_cost_at_sale NUMERIC(10,2)",
             "ALTER TABLE sales ADD COLUMN IF NOT EXISTS notes TEXT",
             "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS part_id UUID REFERENCES parts(id)",
             "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reference_type VARCHAR(20)",

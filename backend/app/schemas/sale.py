@@ -30,6 +30,14 @@ class DeviceForSaleItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PartForSaleItem(BaseModel):
+    id: str
+    name: str
+    sku: Optional[str] = None
+    type: str
+    model_config = {"from_attributes": True}
+
+
 class SaleLineItemOut(BaseModel):
     id: str
     sale_id: str
@@ -40,6 +48,9 @@ class SaleLineItemOut(BaseModel):
     line_total: Decimal
     notes: Optional[str] = None
     device: Optional[DeviceForSaleItem] = None
+    # Part/accessory info for part lines. Deliberately excludes unit_cost —
+    # cost stays confidential; COGS is computed server-side in reports only.
+    part: Optional[PartForSaleItem] = None
     model_config = {"from_attributes": True}
 
 

@@ -463,12 +463,29 @@ function CeoDashboard() {
                   onClick={() => navigate('/expenses')}
                 />
                 <StatCard
-                  label="Inventory Value"
+                  label="Inventory Value — Devices"
                   value={fmt(s.inventory_value)}
                   sub={`${s.phones_in_stock} phones in stock`}
                   color="#8b5cf6"
                   onClick={() => navigate('/devices')}
                 />
+                {(s as any).parts_stock_value !== undefined && (
+                  <StatCard
+                    label="Parts & Accessories Value"
+                    value={fmt((s as any).parts_stock_value)}
+                    sub={`${(s as any).parts_stock_units ?? 0} units in stock`}
+                    color="#06b6d4"
+                    onClick={() => navigate('/parts')}
+                  />
+                )}
+                {(s as any).inventory_value_total !== undefined && (
+                  <StatCard
+                    label="Total Inventory Value"
+                    value={fmt((s as any).inventory_value_total)}
+                    sub="Devices + Parts & Accessories"
+                    color="#0f172a"
+                  />
+                )}
               </CardRow>
             </Section>
 
@@ -504,6 +521,29 @@ function CeoDashboard() {
                   onClick={() => navigate('/sales')} />
               </CardRow>
             </Section>
+
+            {/* ── Parts & Accessories ── */}
+            {(data as any).parts_accessories && (() => {
+              const pa = (data as any).parts_accessories
+              return (
+                <Section title="Parts & Accessories">
+                  <CardRow>
+                    <StatCard label="Units in Stock" value={pa.stock_units} color="#06b6d4"
+                      onClick={() => navigate('/parts')} />
+                    <StatCard label="Stock Value (cost)" value={fmt(pa.stock_value)} color="#1d4ed8"
+                      onClick={() => navigate('/parts')} />
+                    <StatCard label="Sold (Period)" value={pa.sold_qty_period}
+                      sub={`Revenue: ${fmt(pa.sales_revenue_period)}`} color="#22c55e" />
+                    <StatCard label="Parts Gross Profit (Period)" value={fmt(pa.gross_profit_period)}
+                      sub={`COGS: ${fmt(pa.cogs_period)}`}
+                      color={parseFloat(pa.gross_profit_period) >= 0 ? '#16a34a' : '#ef4444'} />
+                    <StatCard label="Low Stock Items" value={pa.low_stock_count}
+                      color={pa.low_stock_count > 0 ? '#dc2626' : '#16a34a'}
+                      onClick={() => navigate('/parts')} />
+                  </CardRow>
+                </Section>
+              )
+            })()}
 
             {/* ── Sales Overview ── */}
             <Section title="Sales Overview">

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import Optional
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.purchase_order import (
@@ -362,6 +363,31 @@ async def receive_item(
         actual_condition=body.actual_condition,
         selling_price=body.selling_price,
         notes=body.notes,
+    )
+    await db.commit()
+    result = await db.execute(
+        select(PurchaseOrder).where(PurchaseOrder.id == po_id).options(*_po_load_options())
+    )
+    return _po_to_out(result.scalar_one())
+
+
+class ReceivePartLineRequest(BaseModel):
+    quantity: int
+
+
+@router.post("/{po_id}/line-items/{line_item_id}/receive-part", response_model=PurchaseOrderOut)
+async def receive_part_line_item(
+    po_id: str,
+    line_item_id: str,
+    body: ReceivePartLineRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(inventory_or_admin()),
+):
+    """Receive units of a PART line into Parts & Accessories stock."""
+    from app.services.intake import receive_part_line
+    await receive_part_line(
+        db, po_id=po_id, line_item_id=line_item_id,
+        quantity=body.quantity, user_id=current_user.id,
     )
     await db.commit()
     result = await db.execute(

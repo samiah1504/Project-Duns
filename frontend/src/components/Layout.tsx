@@ -16,7 +16,7 @@ const NAV = [
   { to: '/refurb', label: 'Refurb Jobs', module: 'refurb' },
   { to: '/sales', label: 'Sales', module: 'sales' },
   { to: '/customers', label: 'Customers', module: 'customers' },
-  { to: '/parts', label: 'Parts', module: 'parts' },
+  { to: '/parts', label: 'Parts & Accessories', module: 'parts' },
   { to: '/returns', label: 'Returns', module: 'returns' },
   { to: '/reports', label: 'Reports', module: 'reports' },
   { to: '/expenses', label: 'Expenses', module: 'expenses' },

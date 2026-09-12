@@ -307,6 +307,85 @@ async def receive_line_item(
     return received, device
 
 
+async def receive_part_line(
+    db: AsyncSession,
+    po_id: str,
+    line_item_id: str,
+    quantity: int,
+    user_id: str,
+) -> Part:
+    """Receive units of a PART line item into Parts & Accessories stock.
+
+    Increases Part.quantity_on_hand, tracks received_qty on the line item,
+    and writes a stock-movement audit entry. Device receiving is untouched.
+    """
+    if quantity <= 0:
+        raise BadRequestError("Quantity to receive must be positive")
+
+    po_result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))
+    po = po_result.scalar_one_or_none()
+    if not po:
+        raise NotFoundError("Purchase order not found")
+
+    _po_status_norm = (po.status.value if hasattr(po.status, "value") else po.status or "").lower()
+    if _po_status_norm not in {"open", "ordered", "partially_received", "fully_received"}:
+        raise BadRequestError(f"PO is {po.status} — cannot receive more items")
+
+    li_result = await db.execute(
+        select(POLineItem).where(
+            POLineItem.id == line_item_id,
+            POLineItem.po_id == po_id,
+        )
+    )
+    line_item = li_result.scalar_one_or_none()
+    if not line_item:
+        raise NotFoundError("Line item not found on this PO")
+
+    line_type = (line_item.line_type or "").lower()
+    if line_type != POLineType.PART.value:
+        raise BadRequestError("This line item is not a part line")
+    if not line_item.part_id:
+        raise BadRequestError("Part line item has no linked part")
+    if line_item.item_status == POLineItemStatus.NOT_RECEIVED.value:
+        raise BadRequestError("This line item has been marked as not received")
+
+    already = line_item.received_qty or 0
+    if already + quantity > line_item.quantity:
+        raise BadRequestError(
+            f"Cannot receive {quantity}: only {line_item.quantity - already} "
+            f"of {line_item.quantity} unit(s) outstanding on this line"
+        )
+
+    part_result = await db.execute(select(Part).where(Part.id == line_item.part_id))
+    part = part_result.scalar_one_or_none()
+    if not part:
+        raise NotFoundError("Linked part not found")
+
+    part.quantity_on_hand += quantity
+    # Latest-cost policy: a PO line with a unit cost updates the part's cost.
+    if line_item.unit_cost is not None:
+        part.unit_cost = line_item.unit_cost
+
+    line_item.received_qty = already + quantity
+    if line_item.received_qty >= line_item.quantity:
+        line_item.item_status = POLineItemStatus.FULLY_RECEIVED.value
+    else:
+        line_item.item_status = POLineItemStatus.PARTIALLY_RECEIVED.value
+
+    await write_audit(
+        db,
+        user_id=user_id,
+        part_id=part.id,
+        reference_type=ReferenceType.PO,
+        reference_id=po.po_number,
+        notes=(
+            f"Received +{quantity} x {part.name} via {po.po_number} "
+            f"(now {part.quantity_on_hand})"
+        ),
+    )
+    return part
+
+
 async def mark_line_item_not_received(
     db: AsyncSession,
     po_id: str,

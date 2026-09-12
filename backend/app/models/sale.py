@@ -110,6 +110,9 @@ class SaleLineItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     line_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # COGS snapshot for part lines: the part's unit_cost at the moment of sale.
+    # NULL for device lines (device cost lives on the device itself).
+    unit_cost_at_sale: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sale: Mapped["Sale"] = relationship("Sale", back_populates="line_items")

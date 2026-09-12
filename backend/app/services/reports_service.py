@@ -668,6 +668,22 @@ async def get_operations_summary(
         p.unit_cost_at_time * p.quantity
         for j in jobs for p in j.parts_used
     )
+
+    # Parts & Accessories: current stock value (cost price) and external sales
+    _all_parts = (await db.execute(select(Part))).scalars().all()
+    parts_stock_value = sum(
+        (p.unit_cost or Decimal("0")) * p.quantity_on_hand for p in _all_parts
+    )
+    _psq = select(SaleLineItem).join(Sale).where(SaleLineItem.part_id != None)  # noqa: E711
+    if date_from:
+        _psq = _psq.where(Sale.date >= date_from)
+    if date_to:
+        _psq = _psq.where(Sale.date <= date_to)
+    _part_sale_lines = (await db.execute(_psq)).scalars().all()
+    parts_sales_revenue = sum(li.line_total for li in _part_sale_lines)
+    parts_sales_cogs = sum(
+        (li.unit_cost_at_sale or Decimal("0")) * li.quantity for li in _part_sale_lines
+    )
     external_cost = sum(j.external_cost or Decimal("0.00") for j in jobs)
 
     # Expenses
@@ -731,6 +747,14 @@ async def get_operations_summary(
             "phones_in_refurb": in_refurb_count,
             "phones_sold": sold_count,
             "phones_returned": returned_count,
+            "parts_stock_value": str(parts_stock_value),
+            "total_inventory_value": str(stock_value + parts_stock_value),
+        },
+        "parts_accessories": {
+            "stock_value": str(parts_stock_value),
+            "sales_revenue_period": str(parts_sales_revenue),
+            "cogs_period": str(parts_sales_cogs),
+            "gross_profit_period": str(parts_sales_revenue - parts_sales_cogs),
         },
         "financial": {
             "estimated_gross_profit": str(gross_profit),
@@ -957,6 +981,25 @@ async def get_ceo_dashboard(
     ret_q = select(ReturnRMA).where(ReturnRMA.date >= date_from, ReturnRMA.date <= date_to)
     returns_period = (await db.execute(ret_q)).scalars().all()
 
+    # ── Parts & Accessories stock (current state) ─────────────────────────
+    all_parts = (await db.execute(select(Part))).scalars().all()
+    parts_stock_units = sum(p.quantity_on_hand for p in all_parts)
+    # Valuation always at COST price, never selling price
+    parts_stock_value = sum(
+        (p.unit_cost or Decimal("0")) * p.quantity_on_hand for p in all_parts
+    )
+
+    # Parts sold externally in period (via sale part lines)
+    parts_lines_period = [
+        li for s in sales_period for li in s.line_items if li.part_id
+    ]
+    parts_sold_qty = sum(li.quantity for li in parts_lines_period)
+    parts_sales_revenue = sum(li.line_total for li in parts_lines_period)
+    parts_cogs_period = sum(
+        (li.unit_cost_at_sale or Decimal("0")) * li.quantity for li in parts_lines_period
+    )
+    parts_gross_profit = parts_sales_revenue - parts_cogs_period
+
     # ── Alerts ────────────────────────────────────────────────────────────
     low_stock_parts = (
         await db.execute(select(Part).where(Part.quantity_on_hand <= Part.min_stock_level))
@@ -1031,8 +1074,9 @@ async def get_ceo_dashboard(
     top_salespersons = sorted(sp_data.items(), key=lambda x: x[1]["revenue"], reverse=True)[:5]
 
     # COGS: cost of devices sold in period (via their sale_line_items)
+    # plus cost of parts/accessories sold externally (unit_cost_at_sale snapshot)
     devices_sold = [li.device for s in sales_period for li in s.line_items if li.device]
-    cogs = sum(d.total_cost for d in devices_sold)
+    cogs = sum(d.total_cost for d in devices_sold) + parts_cogs_period
 
     # Refurb costs in period
     refurb_parts_cost = sum(
@@ -1159,6 +1203,8 @@ async def get_ceo_dashboard(
         for li in s.line_items:
             if li.device:
                 daily_cogs[d] += li.device.total_cost
+            elif li.part_id:
+                daily_cogs[d] += (li.unit_cost_at_sale or Decimal("0")) * li.quantity
     daily_expenses: dict[str, Decimal] = defaultdict(Decimal)
     for e in expenses_period:
         daily_expenses[e.date.isoformat()] += e.amount
@@ -1187,6 +1233,21 @@ async def get_ceo_dashboard(
             "refunds_period": str(refunds_period),
             "inventory_value": str(inventory_value),
             "phones_in_stock": len(in_stock_devices),
+            # Parts & Accessories — own category, never double-counted with
+            # device parts_cost (that covers CONSUMED parts; this is stock on hand)
+            "parts_stock_value": str(parts_stock_value),
+            "parts_stock_units": parts_stock_units,
+            "inventory_value_total": str(inventory_value + parts_stock_value),
+        },
+        "parts_accessories": {
+            "stock_items": len(all_parts),
+            "stock_units": parts_stock_units,
+            "stock_value": str(parts_stock_value),
+            "sold_qty_period": parts_sold_qty,
+            "sales_revenue_period": str(parts_sales_revenue),
+            "cogs_period": str(parts_cogs_period),
+            "gross_profit_period": str(parts_gross_profit),
+            "low_stock_count": len(low_stock_parts),
         },
         "inventory": {
             "sellable": inv_counts.get(DeviceStatus.SELLABLE, 0),

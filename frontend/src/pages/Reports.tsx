@@ -170,12 +170,28 @@ function OperationsSummaryTab() {
           </Card>
           <Card><SH title="📦 Inventory" />
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-              <StatBox label="Stock Value" value={fmt(data.inventory.stock_value)} />
+              <StatBox label="Device Stock Value" value={fmt(data.inventory.stock_value)} />
               <StatBox label="In Stock" value={data.inventory.phones_in_stock} />
               <StatBox label="In Refurb" value={data.inventory.phones_in_refurb} color="#f59e0b" />
               <StatBox label="Sold" value={data.inventory.phones_sold} color="#3b82f6" />
+              {data.inventory.parts_stock_value !== undefined && (
+                <StatBox label="Parts & Accessories Value" value={fmt(data.inventory.parts_stock_value)} color="#06b6d4" />
+              )}
+              {data.inventory.total_inventory_value !== undefined && (
+                <StatBox label="Total Inventory Value" value={fmt(data.inventory.total_inventory_value)} color="#0f172a" />
+              )}
             </div>
           </Card>
+          {data.parts_accessories && (
+            <Card><SH title="🔌 Parts & Accessories" />
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <StatBox label="Stock Value (cost)" value={fmt(data.parts_accessories.stock_value)} color="#1d4ed8" />
+                <StatBox label="Sales Revenue" value={fmt(data.parts_accessories.sales_revenue_period)} color="#22c55e" />
+                <StatBox label="COGS" value={fmt(data.parts_accessories.cogs_period)} color="#ef4444" />
+                <StatBox label="Gross Profit" value={fmt(data.parts_accessories.gross_profit_period)} color="#2563eb" />
+              </div>
+            </Card>
+          )}
           <Card><SH title="📊 Financial Summary" />
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
               <StatBox label="Est. Gross Profit" value={fmt(data.financial.estimated_gross_profit)} color="#2563eb" />
