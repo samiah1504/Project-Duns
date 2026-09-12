@@ -293,6 +293,13 @@ export interface RefurbJob {
   id: string
   job_number: string
   device_id: string
+  device?: {
+    imei: string
+    inventory_number?: string | null
+    grade: string
+    status: string
+    model?: { brand: string; model_name: string; ram?: string; storage?: string; colour?: string } | null
+  } | null
   assigned_engineer_id?: string
   status: 'open' | 'in_progress' | 'awaiting_qc' | 'qc_failed' | 'closed'
   fault_description?: string
@@ -327,7 +334,7 @@ export interface RefurbJobPart {
   job_id: string
   part_id: string
   quantity: number
-  unit_cost_at_time: string
+  unit_cost_at_time?: string   // no longer sent by the API (cost confidentiality)
   created_at: string
 }
 

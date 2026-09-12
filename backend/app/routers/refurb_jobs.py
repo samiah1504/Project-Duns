@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models.refurb_job import RefurbJob, JobStatus
+from app.models.device import Device
 from app.schemas.refurb_job import (
     RefurbJobCreate, RefurbJobOut, AddPartsRequest, CloseJobRequest,
     AssignEngineerRequest, CompleteRefurbRequest, QCPassRequest, QCFailRequest,
@@ -23,7 +24,10 @@ router = APIRouter()
 
 
 def _job_query():
-    return select(RefurbJob).options(selectinload(RefurbJob.parts_used))
+    return select(RefurbJob).options(
+        selectinload(RefurbJob.parts_used),
+        selectinload(RefurbJob.device).selectinload(Device.model),
+    )
 
 
 async def _fetch_job(db: AsyncSession, job_id: str) -> RefurbJob:

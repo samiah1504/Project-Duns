@@ -17,6 +17,42 @@ const STATUS_META: Record<string, { label: string; bg: string; color: string }> 
   closed:      { label: 'Closed',                  bg: '#f0fdf4', color: '#166534' },
 }
 
+// ─── Device identification helpers ───────────────────────────────────────────
+
+/** "iPhone 13 Pro 128GB · Blue" — gracefully omits missing fields. */
+function deviceTitle(job: RefurbJob): string {
+  const m = job.device?.model
+  if (!m) return ''
+  const main = [m.brand, m.model_name, m.storage].filter(Boolean).join(' ')
+  return m.colour ? `${main} · ${m.colour}` : main
+}
+
+/** Short one-liner for modal headers: "iPhone 13 Pro 128GB · IMEI: 3567…" */
+function deviceShort(job: RefurbJob): string {
+  const d = job.device
+  if (!d) return ''
+  const title = deviceTitle(job)
+  const id = d.imei ? `IMEI: ${d.imei}` : (d.inventory_number ?? '')
+  return [title, id].filter(Boolean).join(' · ')
+}
+
+function DeviceCell({ job }: { job: RefurbJob }) {
+  const d = job.device
+  if (!d) {
+    // Fallback for jobs whose device could not be loaded
+    return <code style={{ fontSize: 11 }}>{job.device_id.slice(0, 8)}…</code>
+  }
+  const title = deviceTitle(job)
+  const line3 = [d.inventory_number, d.grade ? `Grade ${d.grade}` : ''].filter(Boolean).join(' · ')
+  return (
+    <div>
+      <div style={{ fontWeight: 700, fontSize: 13 }}>{title || '(model unknown)'}</div>
+      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#334155' }}>IMEI: {d.imei}</div>
+      {line3 && <div style={{ fontSize: 11, color: '#64748b' }}>{line3}</div>}
+    </div>
+  )
+}
+
 function JobStatusBadge({ status }: { status: string }) {
   const m = STATUS_META[status] ?? { label: status, bg: '#f1f5f9', color: '#64748b' }
   return (
@@ -40,7 +76,7 @@ function AssignEngineerModal({ job, engineers, onClose }: { job: RefurbJob; engi
   })
 
   return (
-    <Modal open={true} title={`Assign Engineer — ${job.job_number}`} onClose={onClose}>
+    <Modal open={true} title={`Assign Engineer — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Select value={engId} onChange={e => setEngId(e.target.value)}>
           <option value="">Select engineer…</option>
@@ -85,11 +121,20 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
   })
 
   return (
-    <Modal open={true} title={`${job.job_number} — With Engineer`} onClose={onClose}>
+    <Modal open={true} title={`${job.job_number} — With Engineer${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {job.parts_used.length > 0 && (
           <div style={{ fontSize: 12, color: '#64748b' }}>
-            Parts used: {job.parts_used.map(p => `${p.quantity}× ${p.part_id.slice(0, 6)}`).join(', ')}
+            <div style={{ fontWeight: 700, marginBottom: 3 }}>Parts used:</div>
+            {job.parts_used.map(p => {
+              const part = parts.find(x => x.id === p.part_id)
+              const label = part
+                ? `${part.name}${part.sku ? ` — SKU: ${part.sku}` : ''}`
+                : p.part_id.slice(0, 6) + '…'
+              return (
+                <div key={p.id}>{label} — Qty: {p.quantity}</div>
+              )
+            })}
           </div>
         )}
 
@@ -148,7 +193,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
   })
 
   return (
-    <Modal open={true} title={`QC Check — ${job.job_number}`} onClose={onClose}>
+    <Modal open={true} title={`QC Check — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ padding: '8px 12px', background: '#ede9fe', borderRadius: 6, fontSize: 13, color: '#5b21b6' }}>
           Device is awaiting quality check. Record the inspection result.
@@ -187,7 +232,7 @@ function ReturnToEngineerModal({ job, engineers, onClose }: { job: RefurbJob; en
   })
 
   return (
-    <Modal open={true} title={`Return to Engineer — ${job.job_number}`} onClose={onClose}>
+    <Modal open={true} title={`Return to Engineer — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ padding: '8px 12px', background: '#fee2e2', borderRadius: 6, fontSize: 13, color: '#991b1b' }}>
           QC failed. Return device to engineer for rework.
@@ -259,6 +304,7 @@ type ModalState =
 
 export default function RefurbJobs() {
   const [filterStatus, setFilterStatus] = useState('')
+  const [search, setSearch] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
 
   const { data: jobs = [] } = useQuery<RefurbJob[]>({
@@ -286,6 +332,21 @@ export default function RefurbJobs() {
 
   const engineerUsers = engineers
 
+  // Client-side search across the loaded jobs — works alongside the status filter
+  const visibleJobs = jobs.filter(job => {
+    if (!search.trim()) return true
+    const q = search.trim().toLowerCase()
+    const d = job.device
+    const haystack = [
+      job.job_number,
+      d?.imei,
+      d?.inventory_number,
+      d?.model?.brand,
+      d?.model?.model_name,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
+
   return (
     <div>
       <PageHeader
@@ -300,19 +361,30 @@ export default function RefurbJobs() {
       </Card>
 
       <Card style={{ marginBottom: 16 }}>
-        <Select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ maxWidth: 220 }}>
-          <option value="">Active jobs only</option>
-          <option value="open">Open — Awaiting Engineer</option>
-          <option value="in_progress">In Progress</option>
-          <option value="awaiting_qc">Awaiting QC</option>
-          <option value="qc_failed">QC Failed</option>
-          <option value="closed">Closed</option>
-        </Select>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search IMEI, inventory #, brand, model or job #…"
+            style={{ flex: 1, minWidth: 240, padding: '8px 11px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+          />
+          <Select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ maxWidth: 220 }}>
+            <option value="">Active jobs only</option>
+            <option value="open">Open — Awaiting Engineer</option>
+            <option value="in_progress">In Progress</option>
+            <option value="awaiting_qc">Awaiting QC</option>
+            <option value="qc_failed">QC Failed</option>
+            <option value="closed">Closed</option>
+          </Select>
+          <span style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
+            {visibleJobs.length} job{visibleJobs.length !== 1 ? 's' : ''}
+          </span>
+        </div>
       </Card>
 
       <Card>
-        <Table headers={['Job #', 'Device ID', 'Engineer', 'Status', 'Opened', 'Parts', 'Actions']}>
-          {jobs.map(job => {
+        <Table headers={['Job #', 'Device', 'Engineer', 'Status', 'Opened', 'Parts', 'Actions']}>
+          {visibleJobs.map(job => {
             const eng = engineers.find(u => u.id === job.assigned_engineer_id)
             return (
               <TR key={job.id}>
@@ -322,7 +394,7 @@ export default function RefurbJobs() {
                     <div style={{ fontSize: 10, color: '#94a3b8' }}>auto</div>
                   )}
                 </TD>
-                <TD><code style={{ fontSize: 11 }}>{job.device_id.slice(0, 8)}…</code></TD>
+                <TD><DeviceCell job={job} /></TD>
                 <TD style={{ color: eng ? '#1e293b' : '#94a3b8' }}>{eng?.name ?? 'Unassigned'}</TD>
                 <TD><JobStatusBadge status={job.status} /></TD>
                 <TD style={{ color: '#64748b', fontSize: 12 }}>{job.date_opened}</TD>
@@ -354,10 +426,10 @@ export default function RefurbJobs() {
               </TR>
             )
           })}
-          {jobs.length === 0 && (
+          {visibleJobs.length === 0 && (
             <TR>
               <TD style={{ textAlign: 'center', color: '#94a3b8', padding: 32 }}>
-                No active refurb jobs.
+                {search ? 'No jobs match your search.' : 'No active refurb jobs.'}
               </TD>
               <TD>{''}</TD><TD>{''}</TD><TD>{''}</TD><TD>{''}</TD><TD>{''}</TD><TD>{''}</TD>
             </TR>
