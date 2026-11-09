@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.refurb_job import JobStatus, JobOutcome
 from app.models.device import DeviceGrade
@@ -39,11 +39,11 @@ class ReturnToEngineerRequest(BaseModel):
 
 class RefurbJobPartAdd(BaseModel):
     part_id: str
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1)
 
 
 class AddPartsRequest(BaseModel):
-    parts: List[RefurbJobPartAdd]
+    parts: List[RefurbJobPartAdd] = Field(min_length=1)
 
 
 class CloseJobRequest(BaseModel):

@@ -103,7 +103,7 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
   const [notes, setNotes] = useState('')
 
   const addMut = useMutation({
-    mutationFn: () => addPartsToJob(job.id, { parts: [{ part_id: partId, quantity: parseInt(qty) }] }),
+    mutationFn: () => addPartsToJob(job.id, { parts: [{ part_id: partId, quantity: Math.max(1, parseInt(qty) || 1) }] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['refurb-jobs'] }); toast.success('Parts added') },
     onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
   })
@@ -307,12 +307,19 @@ export default function RefurbJobs() {
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
 
+  // Searching (IMEI, inventory # or job #) goes to the server and covers ALL jobs,
+  // including closed ones, so any device's refurb history can be traced.
+  const searchTerm = search.trim()
   const { data: jobs = [] } = useQuery<RefurbJob[]>({
-    queryKey: ['refurb-jobs', filterStatus],
+    queryKey: ['refurb-jobs', filterStatus, searchTerm],
     queryFn: () => {
-      const p: Record<string, string> = filterStatus ? { status: filterStatus } : { active_only: 'true' }
+      const p: Record<string, string> = {}
+      if (filterStatus) p.status = filterStatus
+      else if (!searchTerm) p.active_only = 'true'
+      if (searchTerm) p.search = searchTerm
       return getRefurbJobs(p).then(r => r.data)
     },
+    placeholderData: prev => prev,
   })
 
   const { data: engineers = [] } = useQuery<User[]>({
@@ -332,20 +339,10 @@ export default function RefurbJobs() {
 
   const engineerUsers = engineers
 
-  // Client-side search across the loaded jobs — works alongside the status filter
-  const visibleJobs = jobs.filter(job => {
-    if (!search.trim()) return true
-    const q = search.trim().toLowerCase()
-    const d = job.device
-    const haystack = [
-      job.job_number,
-      d?.imei,
-      d?.inventory_number,
-      d?.model?.brand,
-      d?.model?.model_name,
-    ].filter(Boolean).join(' ').toLowerCase()
-    return haystack.includes(q)
-  })
+  const visibleJobs = jobs
+
+  // Modals get the latest copy of the job so e.g. "Parts used" updates after adding parts
+  const liveJob = (job: RefurbJob) => jobs.find(j => j.id === job.id) ?? job
 
   return (
     <div>
@@ -356,7 +353,7 @@ export default function RefurbJobs() {
 
       <Card style={{ marginBottom: 8, padding: '8px 16px', background: '#eff6ff', borderColor: '#93c5fd' }}>
         <span style={{ fontSize: 12, color: '#1e40af' }}>
-          Jobs are created automatically when a device is received as Awaiting Refurb. Only active jobs are shown by default.
+          Jobs are created automatically when a device is received as Awaiting Refurb. Only active jobs are shown by default — searching by IMEI, inventory # or job # also finds closed jobs. A device returns to Sellable Stock when it passes QC.
         </span>
       </Card>
 
@@ -448,7 +445,7 @@ export default function RefurbJobs() {
         <AssignEngineerModal job={modal.job} engineers={engineerUsers} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'manage' && (
-        <ManageJobModal job={modal.job} parts={parts} onClose={() => setModal(null)} />
+        <ManageJobModal job={liveJob(modal.job)} parts={parts} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'qc' && (
         <QCModal job={modal.job} onClose={() => setModal(null)} />

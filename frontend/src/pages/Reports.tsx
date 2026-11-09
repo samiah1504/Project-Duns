@@ -385,9 +385,9 @@ function RefurbTab() {
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:10}}>
         <DateFilter from={from} to={to} onChange={(f,t)=>{setFrom(f);setTo(t)}} />
         <ExportBar
-          onCSV={()=>{ if(!data) return; downloadCSV('refurb-report.csv',['Job #','Date Opened','Date Closed','Status','Outcome','Engineer','External Cost'],
-            data.history.map((r:any)=>[r.job_number,r.date_opened,r.date_closed,r.status,r.outcome,r.engineer,r.external_cost]))}}
-          onPrint={()=>{ if(!data) return; const rows=data.history.slice(0,100).map((r:any)=>`<tr><td>${r.job_number}</td><td>${r.date_opened}</td><td>${r.date_closed??'—'}</td><td>${r.status}</td><td>${r.outcome??'—'}</td><td>${r.engineer}</td></tr>`).join('');
+          onCSV={()=>{ if(!data) return; downloadCSV('refurb-report.csv',['Job #','IMEI','Inventory #','Device','Date Opened','Date Closed','Status','Outcome','Engineer','External Cost'],
+            data.history.map((r:any)=>[r.job_number,r.imei,r.inventory_number,r.device,r.date_opened,r.date_closed,r.status,r.outcome,r.engineer,r.external_cost]))}}
+          onPrint={()=>{ if(!data) return; const rows=data.history.slice(0,100).map((r:any)=>`<tr><td>${r.job_number}</td><td>${r.imei??'—'}</td><td>${r.device??'—'}</td><td>${r.date_opened}</td><td>${r.date_closed??'—'}</td><td>${r.status}</td><td>${r.outcome??'—'}</td><td>${r.engineer}</td></tr>`).join('');
             printSection('Refurbishment Report',`<div class="stat-grid">
               <div class="stat"><div class="stat-label">Total Jobs</div><div class="stat-value">${data.total_jobs}</div></div>
               <div class="stat"><div class="stat-label">Open</div><div class="stat-value" style="color:#f59e0b">${data.open}</div></div>
@@ -395,7 +395,7 @@ function RefurbTab() {
               <div class="stat"><div class="stat-label">Parts Cost</div><div class="stat-value">₦${Number(data.total_parts_cost).toLocaleString()}</div></div>
               <div class="stat"><div class="stat-label">External Cost</div><div class="stat-value">₦${Number(data.total_external_cost).toLocaleString()}</div></div>
               ${data.avg_turnaround_days!=null?`<div class="stat"><div class="stat-label">Avg Turnaround</div><div class="stat-value">${data.avg_turnaround_days} days</div></div>`:''}
-            </div><table><thead><tr><th>Job #</th><th>Opened</th><th>Closed</th><th>Status</th><th>Outcome</th><th>Engineer</th></tr></thead><tbody>${rows}</tbody></table>`)}}
+            </div><table><thead><tr><th>Job #</th><th>IMEI</th><th>Device</th><th>Opened</th><th>Closed</th><th>Status</th><th>Outcome</th><th>Engineer</th></tr></thead><tbody>${rows}</tbody></table>`)}}
         />
       </div>
       {isLoading ? <div style={{color:'#94a3b8'}}>Loading…</div> : data && (
@@ -417,8 +417,8 @@ function RefurbTab() {
               <SimpleTable headers={['Part','Qty','Cost']} rows={data.parts_consumed.map((r:any)=>[r.name,r.qty,fmt(r.cost)])} />
             </Card>
             <Card><SH title="Job History" />
-              <SimpleTable headers={['Job #','Opened','Closed','Status','Outcome','Engineer']}
-                rows={data.history.map((r:any)=>[r.job_number,r.date_opened,r.date_closed,r.status,r.outcome,r.engineer])} />
+              <SimpleTable headers={['Job #','IMEI','Device','Opened','Closed','Status','Outcome','Engineer']}
+                rows={data.history.map((r:any)=>[r.job_number,r.imei,r.device,r.date_opened,r.date_closed,r.status,r.outcome,r.engineer])} />
             </Card>
           </div>
         </div>
@@ -651,8 +651,8 @@ function MyRefurbTab() {
               <SimpleTable headers={['Part','Qty']} rows={data.parts_consumed.map((r:any)=>[r.name,r.qty])} />
             </Card>
             <Card><SH title="My Job History" />
-              <SimpleTable headers={['Job #','Opened','Closed','Status','Outcome']}
-                rows={data.history.map((r:any)=>[r.job_number,r.date_opened,r.date_closed,r.status,r.outcome])} />
+              <SimpleTable headers={['Job #','IMEI','Device','Opened','Closed','Status','Outcome']}
+                rows={data.history.map((r:any)=>[r.job_number,r.imei,r.device,r.date_opened,r.date_closed,r.status,r.outcome])} />
             </Card>
           </div>
         </div>

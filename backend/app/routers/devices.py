@@ -141,6 +141,9 @@ async def create_device(
         reference_type=ReferenceType.TRANSFER,
         notes="Device created",
     )
+    # Devices created straight into the refurb flow get their job, like intake does
+    from app.services.refurb import sync_job_after_transfer
+    await sync_job_after_transfer(db, device, current_user.id)
     await db.commit()
     await db.refresh(device)
     return device_to_out(device, current_user.role.value)
@@ -309,10 +312,10 @@ async def transfer_device(
         reference_type=ReferenceType.TRANSFER,
         notes=body.notes,
     )
-    # Auto-create refurb job when device is moved to AWAITING_REFURB
-    if body.to_status == DeviceStatus.AWAITING_REFURB:
-        from app.services.refurb import ensure_refurb_job
-        await ensure_refurb_job(db, device.id, current_user.id)
+    # Keep the refurb job in step: auto-create on AWAITING_REFURB / QC entry,
+    # close it when the device leaves refurb (e.g. back to sellable stock).
+    from app.services.refurb import sync_job_after_transfer
+    await sync_job_after_transfer(db, device, current_user.id)
 
     await db.commit()
     await db.refresh(device)

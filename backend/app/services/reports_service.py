@@ -486,6 +486,16 @@ async def get_sales_detail_report(
     }
 
 
+def _job_device_fields(j) -> dict:
+    """IMEI / inventory # / model for a refurb job row, so reports trace devices."""
+    d = j.device
+    if not d:
+        return {"imei": None, "inventory_number": None, "device": None}
+    m = d.model
+    desc = " ".join(x for x in [m.brand, m.model_name, m.storage] if x) if m else None
+    return {"imei": d.imei, "inventory_number": d.inventory_number, "device": desc}
+
+
 async def get_refurb_report(
     db: AsyncSession,
     date_from: Optional[date_type] = None,
@@ -495,7 +505,8 @@ async def get_refurb_report(
     q = (
         select(RefurbJob)
         .options(selectinload(RefurbJob.parts_used).selectinload(RefurbJobPart.part),
-                 selectinload(RefurbJob.assigned_engineer))
+                 selectinload(RefurbJob.assigned_engineer),
+                 selectinload(RefurbJob.device).selectinload(Device.model))
     )
     if date_from:
         q = q.where(RefurbJob.date_opened >= date_from)
@@ -537,6 +548,7 @@ async def get_refurb_report(
     history = [
         {
             "job_number": j.job_number,
+            **_job_device_fields(j),
             "date_opened": j.date_opened.isoformat(),
             "date_closed": j.date_closed.isoformat() if j.date_closed else None,
             "status": _ev(j.status),
@@ -835,7 +847,8 @@ async def get_my_refurb_dashboard(
 ) -> dict:
     q = (
         select(RefurbJob)
-        .options(selectinload(RefurbJob.parts_used).selectinload(RefurbJobPart.part))
+        .options(selectinload(RefurbJob.parts_used).selectinload(RefurbJobPart.part),
+                 selectinload(RefurbJob.device).selectinload(Device.model))
         .where(RefurbJob.assigned_engineer_id == user_id)
     )
     if date_from:
@@ -880,6 +893,7 @@ async def get_my_refurb_dashboard(
         "history": [
             {
                 "job_number": j.job_number,
+                **_job_device_fields(j),
                 "date_opened": j.date_opened.isoformat(),
                 "date_closed": j.date_closed.isoformat() if j.date_closed else None,
                 "status": _ev(j.status),

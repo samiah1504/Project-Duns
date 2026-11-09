@@ -1,19 +1,20 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 from typing import Optional
 
 from app.database import get_db
-from app.models.refurb_job import RefurbJob, JobStatus
+from app.models.refurb_job import RefurbJob, JobStatus, JobOutcome
 from app.models.device import Device
+from app.models.model import PhoneModel
 from app.schemas.refurb_job import (
     RefurbJobCreate, RefurbJobOut, AddPartsRequest, CloseJobRequest,
     AssignEngineerRequest, CompleteRefurbRequest, QCPassRequest, QCFailRequest,
     ReturnToEngineerRequest,
 )
 from app.core.permissions import engineer_or_admin, any_authenticated, inventory_or_admin, engineer_or_inventory
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ForbiddenError
 from app.services.refurb import (
     create_refurb_job, add_parts_to_job, close_refurb_job,
     assign_engineer, complete_refurb, pass_qc, fail_qc, return_to_engineer,
@@ -43,10 +44,26 @@ async def list_jobs(
     status: Optional[JobStatus] = None,
     engineer_id: Optional[str] = None,
     active_only: bool = False,
+    search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(any_authenticated()),
 ):
+    """List jobs. `search` matches IMEI, inventory number, job number, brand or model across
+    ALL jobs (open and closed) so any device's refurb history can be traced."""
     q = _job_query()
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        q = (
+            q.join(Device, Device.id == RefurbJob.device_id)
+            .outerjoin(PhoneModel, PhoneModel.id == Device.model_id)
+            .where(or_(
+                Device.imei.ilike(term),
+                Device.inventory_number.ilike(term),
+                RefurbJob.job_number.ilike(term),
+                PhoneModel.brand.ilike(term),
+                PhoneModel.model_name.ilike(term),
+            ))
+        )
     if status:
         q = q.where(RefurbJob.status == status)
     elif active_only:
@@ -198,6 +215,10 @@ async def close_job(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(engineer_or_admin()),
 ):
+    # Closing as REGRADED makes the device SELLABLE without QC — managers only.
+    role = getattr(current_user.role, "value", current_user.role)
+    if body.outcome == JobOutcome.REGRADED and role not in ("ADMIN", "OPERATIONS"):
+        raise ForbiddenError("Only ADMIN or OPERATIONS can return a device to stock without QC")
     job = await close_refurb_job(
         db,
         job_id=job_id,

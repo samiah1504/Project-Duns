@@ -45,19 +45,36 @@ async def _get_job(db: AsyncSession, job_id: str) -> RefurbJob:
 _ACTIVE_STATUSES = [JobStatus.OPEN, JobStatus.IN_PROGRESS, JobStatus.AWAITING_QC, JobStatus.QC_FAILED]
 
 
+def _sv(x) -> str:
+    """Status value as text. Job status/outcome columns are plain VARCHAR, so rows
+    loaded from the DB hold str, while freshly-set values may be enum members."""
+    return x.value if hasattr(x, "value") else str(x)
+
+
+def _dev_label(device: Device) -> str:
+    """Human-traceable device reference for audit notes: IMEI (+ inventory number)."""
+    label = f"IMEI {device.imei}"
+    if device.inventory_number:
+        label += f" / {device.inventory_number}"
+    return label
+
+
+async def _get_active_job(db: AsyncSession, device_id: str) -> Optional[RefurbJob]:
+    result = await db.execute(
+        select(RefurbJob)
+        .where(RefurbJob.device_id == device_id, RefurbJob.status.in_(_ACTIVE_STATUSES))
+        .order_by(RefurbJob.created_at.desc())
+    )
+    return result.scalars().first()
+
+
 async def ensure_refurb_job(
     db: AsyncSession,
     device_id: str,
     user_id: str,
 ) -> RefurbJob:
     """Idempotently create an OPEN refurb job for a device. Does NOT transition device status."""
-    existing = await db.execute(
-        select(RefurbJob).where(
-            RefurbJob.device_id == device_id,
-            RefurbJob.status.in_(_ACTIVE_STATUSES),
-        )
-    )
-    existing_job = existing.scalar_one_or_none()
+    existing_job = await _get_active_job(db, device_id)
     if existing_job:
         return existing_job
 
@@ -83,7 +100,7 @@ async def ensure_refurb_job(
         to_location=device.location.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"Refurb job auto-created: {job.job_number}",
+        notes=f"Refurb job auto-created: {job.job_number} for {_dev_label(device)}",
     )
     return job
 
@@ -96,28 +113,40 @@ async def create_refurb_job(
     fault_description: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> RefurbJob:
-    """Manual job creation. If engineer assigned, transitions device to IN_REFURB."""
+    """Manual job creation. If engineer assigned, transitions device to IN_REFURB.
+
+    Devices are normally given an OPEN job automatically when they become
+    AWAITING_REFURB. If such an OPEN job already exists it is reused (fault /
+    notes / engineer applied to it) rather than rejected, so "New Job" works
+    for every device the page offers.
+    """
     device = await _get_device(db, device_id)
 
     if device.status not in (DeviceStatus.AWAITING_REFURB, DeviceStatus.RETURNED, DeviceStatus.FAILED_QC):
         raise BadRequestError(
-            f"Device must be AWAITING_REFURB, RETURNED, or FAILED_QC to open a job, got {device.status.value}"
+            f"Device {device.imei} must be AWAITING_REFURB, RETURNED, or FAILED_QC to open a job, "
+            f"got {device.status.value}"
         )
 
-    existing = await db.execute(
-        select(RefurbJob).where(
-            RefurbJob.device_id == device_id,
-            RefurbJob.status.in_(_ACTIVE_STATUSES),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise BadRequestError("Device already has an active refurb job")
+    existing = await _get_active_job(db, device_id)
+    if existing:
+        if _sv(existing.status) != JobStatus.OPEN.value:
+            raise BadRequestError(
+                f"Device {device.imei} already has an active refurb job "
+                f"{existing.job_number} ({_sv(existing.status)})"
+            )
+        if fault_description:
+            existing.fault_description = fault_description
+        if notes:
+            existing.notes = (existing.notes + "\n" if existing.notes else "") + notes
+        if assigned_engineer_id:
+            return await assign_engineer(db, existing.id, assigned_engineer_id, user_id)
+        return existing
 
     job_number = await generate_job_number(db)
     job = RefurbJob(
         job_number=job_number,
         device_id=device_id,
-        assigned_engineer_id=assigned_engineer_id,
         status=JobStatus.OPEN,
         fault_description=fault_description,
         date_opened=date.today(),
@@ -127,41 +156,21 @@ async def create_refurb_job(
     db.add(job)
     await db.flush()
 
+    await write_audit(
+        db,
+        user_id=user_id,
+        device_id=device.id,
+        from_status=device.status.value,
+        to_status=device.status.value,
+        from_location=device.location.value,
+        to_location=device.location.value,
+        reference_type=ReferenceType.JOB,
+        reference_id=job.job_number,
+        notes=f"Refurb job opened: {job.job_number} for {_dev_label(device)}",
+    )
+
     if assigned_engineer_id:
-        old_status = device.status
-        old_location = device.location
-        validate_transition(old_status, DeviceStatus.IN_REFURB, DeviceLocation.BENCH)
-        device.status = DeviceStatus.IN_REFURB
-        device.location = DeviceLocation.BENCH
-        device.custody_user_id = assigned_engineer_id
-        job.status = JobStatus.IN_PROGRESS
-
-        await write_audit(
-            db,
-            user_id=user_id,
-            device_id=device.id,
-            from_status=old_status.value,
-            to_status=DeviceStatus.IN_REFURB.value,
-            from_location=old_location.value,
-            to_location=DeviceLocation.BENCH.value,
-            reference_type=ReferenceType.JOB,
-            reference_id=job.job_number,
-            notes=f"Refurb job opened with engineer: {job.job_number}",
-        )
-    else:
-        await write_audit(
-            db,
-            user_id=user_id,
-            device_id=device.id,
-            from_status=device.status.value,
-            to_status=device.status.value,
-            from_location=device.location.value,
-            to_location=device.location.value,
-            reference_type=ReferenceType.JOB,
-            reference_id=job.job_number,
-            notes=f"Refurb job opened (awaiting engineer): {job.job_number}",
-        )
-
+        return await assign_engineer(db, job.id, assigned_engineer_id, user_id)
     return job
 
 
@@ -175,7 +184,7 @@ async def assign_engineer(
     """Assign engineer to OPEN job and transition device to IN_REFURB."""
     job = await _get_job(db, job_id)
     if job.status not in (JobStatus.OPEN,):
-        raise BadRequestError(f"Can only assign engineer to an OPEN job, got {job.status.value}")
+        raise BadRequestError(f"Can only assign engineer to an OPEN job, got {_sv(job.status)}")
 
     device = await _get_device(db, job.device_id)
     old_status = device.status
@@ -201,7 +210,7 @@ async def assign_engineer(
         to_location=DeviceLocation.BENCH.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"Engineer assigned to {job.job_number}",
+        notes=f"Engineer assigned to {job.job_number} ({_dev_label(device)})",
     )
     return job
 
@@ -215,7 +224,7 @@ async def complete_refurb(
     """Engineer marks refurb done — device moves to AWAITING_QC."""
     job = await _get_job(db, job_id)
     if job.status != JobStatus.IN_PROGRESS:
-        raise BadRequestError(f"Job must be IN_PROGRESS to complete, got {job.status.value}")
+        raise BadRequestError(f"Job must be IN_PROGRESS to complete, got {_sv(job.status)}")
 
     device = await _get_device(db, job.device_id)
     old_status = device.status
@@ -240,7 +249,7 @@ async def complete_refurb(
         to_location=DeviceLocation.QC.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"Refurb complete, sent to QC: {job.job_number}",
+        notes=f"Refurb complete, sent to QC: {job.job_number} ({_dev_label(device)})",
     )
     return job
 
@@ -255,7 +264,7 @@ async def pass_qc(
     """QC passed — device moves to SELLABLE, job closes."""
     job = await _get_job(db, job_id)
     if job.status != JobStatus.AWAITING_QC:
-        raise BadRequestError(f"Job must be AWAITING_QC to pass QC, got {job.status.value}")
+        raise BadRequestError(f"Job must be AWAITING_QC to pass QC, got {_sv(job.status)}")
 
     device = await _get_device(db, job.device_id)
     old_status = device.status
@@ -284,7 +293,7 @@ async def pass_qc(
         to_location=DeviceLocation.SALES_STOCK.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"QC passed — device now SELLABLE: {job.job_number}",
+        notes=f"QC passed — {_dev_label(device)} back in sales stock (SELLABLE): {job.job_number}",
     )
     return job
 
@@ -298,7 +307,7 @@ async def fail_qc(
     """QC failed — device moves to FAILED_QC."""
     job = await _get_job(db, job_id)
     if job.status != JobStatus.AWAITING_QC:
-        raise BadRequestError(f"Job must be AWAITING_QC to fail QC, got {job.status.value}")
+        raise BadRequestError(f"Job must be AWAITING_QC to fail QC, got {_sv(job.status)}")
 
     device = await _get_device(db, job.device_id)
     old_status = device.status
@@ -322,7 +331,7 @@ async def fail_qc(
         to_location=DeviceLocation.BENCH.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"QC failed — returned to bench: {job.job_number}",
+        notes=f"QC failed — {_dev_label(device)} returned to bench: {job.job_number}",
     )
     return job
 
@@ -337,7 +346,7 @@ async def return_to_engineer(
     """Return device from QC_FAILED back to engineer for rework."""
     job = await _get_job(db, job_id)
     if job.status != JobStatus.QC_FAILED:
-        raise BadRequestError(f"Job must be QC_FAILED to return to engineer, got {job.status.value}")
+        raise BadRequestError(f"Job must be QC_FAILED to return to engineer, got {_sv(job.status)}")
 
     device = await _get_device(db, job.device_id)
     old_status = device.status
@@ -366,7 +375,7 @@ async def return_to_engineer(
         to_location=DeviceLocation.BENCH.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"Returned to engineer after QC fail: {job.job_number}",
+        notes=f"Returned to engineer after QC fail: {job.job_number} ({_dev_label(device)})",
     )
     return job
 
@@ -377,15 +386,25 @@ async def add_parts_to_job(
     parts_data: list,
     user_id: str,
 ) -> RefurbJob:
+    """Consume parts on a job. Only while the device is with the engineer
+    (IN_PROGRESS) — adding parts to an OPEN job used to flip it to IN_PROGRESS
+    without moving the device to the bench, leaving the job stuck."""
     job = await _get_job(db, job_id)
-    if job.status == JobStatus.CLOSED:
-        raise BadRequestError("Cannot add parts to a closed job")
+    if _sv(job.status) != JobStatus.IN_PROGRESS.value:
+        raise BadRequestError(
+            f"Parts can only be added while the job is with an engineer (in_progress), "
+            f"got {_sv(job.status)}"
+        )
+    if not parts_data:
+        raise BadRequestError("No parts supplied")
 
     device = await _get_device(db, job.device_id)
 
     total_parts_cost = Decimal("0.00")
 
     for part_data in parts_data:
+        if part_data.quantity < 1:
+            raise BadRequestError("Part quantity must be at least 1")
         part_result = await db.execute(select(Part).where(Part.id == part_data.part_id))
         part = part_result.scalar_one_or_none()
         if not part:
@@ -396,31 +415,33 @@ async def add_parts_to_job(
                 f"available {part.quantity_on_hand}, requested {part_data.quantity}"
             )
 
+        unit_cost = part.unit_cost or Decimal("0.00")
         part.quantity_on_hand -= part_data.quantity
-        line_cost = part.unit_cost * part_data.quantity
+        line_cost = unit_cost * part_data.quantity
         total_parts_cost += line_cost
 
         job_part = RefurbJobPart(
             job_id=job.id,
             part_id=part.id,
             quantity=part_data.quantity,
-            unit_cost_at_time=part.unit_cost,
+            unit_cost_at_time=unit_cost,
         )
         db.add(job_part)
 
         await write_audit(
             db,
             user_id=user_id,
+            device_id=device.id,
             part_id=part.id,
             reference_type=ReferenceType.JOB,
             reference_id=job.job_number,
-            notes=f"Parts consumed: -{part_data.quantity} x {part.name} for job {job.job_number}",
+            notes=(
+                f"Parts consumed: -{part_data.quantity} x {part.name} "
+                f"for job {job.job_number} ({_dev_label(device)})"
+            ),
         )
 
     device.parts_cost = (device.parts_cost or Decimal("0.00")) + total_parts_cost
-
-    if job.status == JobStatus.OPEN:
-        job.status = JobStatus.IN_PROGRESS
     return job
 
 
@@ -471,7 +492,7 @@ async def close_refurb_job(
     job.outcome = outcome
     job.date_closed = date.today()
     if notes:
-        job.notes = notes
+        job.notes = (job.notes + "\n" if job.notes else "") + f"Closed ({outcome.value}): {notes}"
 
     await write_audit(
         db,
@@ -483,7 +504,98 @@ async def close_refurb_job(
         to_location=to_location.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"Job closed with outcome: {outcome.value}",
+        notes=f"Job {job.job_number} closed with outcome: {outcome.value} ({_dev_label(device)})",
     )
+
+    return job
+
+
+# Device statuses that mean the device has left the refurb pipeline, and the
+# job outcome recorded when a manual transfer takes it there.
+_EXIT_OUTCOMES: dict[DeviceStatus, Optional[JobOutcome]] = {
+    DeviceStatus.SELLABLE: JobOutcome.REGRADED,
+    DeviceStatus.SENT_EXTERNAL: JobOutcome.SENT_EXTERNAL,
+    DeviceStatus.SCRAPPED: JobOutcome.SCRAPPED,
+    DeviceStatus.HARVESTED: JobOutcome.SCRAPPED,
+    DeviceStatus.STOCK_TO_RETURN: None,
+}
+
+
+async def sync_job_after_transfer(
+    db: AsyncSession,
+    device: Device,
+    user_id: str,
+) -> Optional[RefurbJob]:
+    """Keep the refurb job in step with a device moved via the generic
+    /devices/{imei}/transfer endpoint, so jobs are never left open for devices
+    that already went back to stock, and devices coming back into the refurb
+    flow (e.g. from an external repairer to QC) always have a job to act on.
+    """
+    status = device.status
+    job = await _get_active_job(db, device.id)
+
+    if status == DeviceStatus.AWAITING_REFURB:
+        if job and _sv(job.status) != JobStatus.OPEN.value:
+            job.status = JobStatus.OPEN
+            job.assigned_engineer_id = None
+            return job
+        return await ensure_refurb_job(db, device.id, user_id)
+
+    if status in (DeviceStatus.IN_REFURB, DeviceStatus.AWAITING_QC, DeviceStatus.FAILED_QC):
+        target = {
+            DeviceStatus.IN_REFURB: JobStatus.IN_PROGRESS,
+            DeviceStatus.AWAITING_QC: JobStatus.AWAITING_QC,
+            DeviceStatus.FAILED_QC: JobStatus.QC_FAILED,
+        }[status]
+        if not job:
+            job = RefurbJob(
+                job_number=await generate_job_number(db),
+                device_id=device.id,
+                status=target,
+                date_opened=date.today(),
+                auto_created=True,
+                notes="Opened automatically on device transfer",
+            )
+            db.add(job)
+            await db.flush()
+            await write_audit(
+                db,
+                user_id=user_id,
+                device_id=device.id,
+                from_status=status.value,
+                to_status=status.value,
+                from_location=device.location.value,
+                to_location=device.location.value,
+                reference_type=ReferenceType.JOB,
+                reference_id=job.job_number,
+                notes=f"Refurb job auto-created on transfer: {job.job_number} for {_dev_label(device)}",
+            )
+        else:
+            job.status = target
+        if status == DeviceStatus.IN_REFURB and device.custody_user_id:
+            job.assigned_engineer_id = device.custody_user_id
+        return job
+
+    if status in _EXIT_OUTCOMES and job:
+        outcome = _EXIT_OUTCOMES[status]
+        job.status = JobStatus.CLOSED
+        job.outcome = outcome
+        job.date_closed = date.today()
+        job.notes = (job.notes + "\n" if job.notes else "") + (
+            f"Closed automatically: device transferred to {status.value}"
+        )
+        await write_audit(
+            db,
+            user_id=user_id,
+            device_id=device.id,
+            from_status=status.value,
+            to_status=status.value,
+            from_location=device.location.value,
+            to_location=device.location.value,
+            reference_type=ReferenceType.JOB,
+            reference_id=job.job_number,
+            notes=f"Job {job.job_number} closed on transfer to {status.value} ({_dev_label(device)})",
+        )
+        return job
 
     return job

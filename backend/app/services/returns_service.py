@@ -167,6 +167,9 @@ async def create_return_batch(
                     reference_id=rma_number,
                     notes=f"RMA resolved at intake: {item_data.resolution.value}",
                 )
+                # Devices sent back into refurb need a job to reach QC / stock again
+                from app.services.refurb import sync_job_after_transfer
+                await sync_job_after_transfer(db, device, user_id)
 
             # Refund adjustments
             if item_data.refund_amount and customer_id:
@@ -247,6 +250,9 @@ async def resolve_return_item(
             reference_id=rma.rma_number,
             notes=f"RMA resolved: {resolution.value}" + (f", outcome: {restock_outcome}" if restock_outcome else ""),
         )
+        # Devices sent back into refurb need a job to reach QC / stock again
+        from app.services.refurb import sync_job_after_transfer
+        await sync_job_after_transfer(db, device, user_id)
 
     rma.resolution = resolution
     rma.refund_amount = refund_amount
