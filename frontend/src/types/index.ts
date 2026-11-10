@@ -292,7 +292,9 @@ export interface ReturnBatch {
 export interface RefurbJob {
   id: string
   job_number: string
-  device_id: string
+  device_id: string            // internal only — never display; use the IMEI
+  device_imei?: string | null
+  device_inventory_number?: string | null
   device?: {
     imei: string
     inventory_number?: string | null

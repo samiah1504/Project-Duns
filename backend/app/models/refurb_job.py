@@ -61,6 +61,18 @@ class RefurbJob(Base):
         "RefurbJobPart", back_populates="refurb_job", cascade="all, delete-orphan"
     )
 
+    # Flat, human-traceable device identifiers for API responses. Callers must
+    # eager-load `device` (all refurb job queries use selectinload).
+    @property
+    def device_imei(self) -> str | None:
+        d = self.__dict__.get("device")
+        return d.imei if d is not None else None
+
+    @property
+    def device_inventory_number(self) -> str | None:
+        d = self.__dict__.get("device")
+        return d.inventory_number if d is not None else None
+
 
 class RefurbJobPart(Base):
     __tablename__ = "refurb_job_parts"

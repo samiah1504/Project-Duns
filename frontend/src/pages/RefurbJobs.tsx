@@ -27,27 +27,30 @@ function deviceTitle(job: RefurbJob): string {
   return m.colour ? `${main} · ${m.colour}` : main
 }
 
-/** Short one-liner for modal headers: "iPhone 13 Pro 128GB · IMEI: 3567…" */
+/** IMEI for a job — the identifier users trace devices by. */
+function jobImei(job: RefurbJob): string | null {
+  return job.device?.imei ?? job.device_imei ?? null
+}
+
+/** Short one-liner for modal headers: "IMEI: 3567… · iPhone 13 Pro 128GB" */
 function deviceShort(job: RefurbJob): string {
-  const d = job.device
-  if (!d) return ''
-  const title = deviceTitle(job)
-  const id = d.imei ? `IMEI: ${d.imei}` : (d.inventory_number ?? '')
-  return [title, id].filter(Boolean).join(' · ')
+  const imei = jobImei(job)
+  const id = imei ? `IMEI: ${imei}` : (job.device?.inventory_number ?? job.device_inventory_number ?? '')
+  return [id, deviceTitle(job)].filter(Boolean).join(' · ')
 }
 
 function DeviceCell({ job }: { job: RefurbJob }) {
   const d = job.device
-  if (!d) {
-    // Fallback for jobs whose device could not be loaded
-    return <code style={{ fontSize: 11 }}>{job.device_id.slice(0, 8)}…</code>
-  }
+  const imei = jobImei(job)
   const title = deviceTitle(job)
-  const line3 = [d.inventory_number, d.grade ? `Grade ${d.grade}` : ''].filter(Boolean).join(' · ')
+  const invNo = d?.inventory_number ?? job.device_inventory_number
+  const line3 = [invNo, d?.grade ? `Grade ${d.grade}` : ''].filter(Boolean).join(' · ')
   return (
     <div>
-      <div style={{ fontWeight: 700, fontSize: 13 }}>{title || '(model unknown)'}</div>
-      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#334155' }}>IMEI: {d.imei}</div>
+      <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+        {imei ?? <span style={{ color: '#94a3b8', fontFamily: 'inherit', fontWeight: 400 }}>IMEI unavailable</span>}
+      </div>
+      {title && <div style={{ fontSize: 12, color: '#334155' }}>{title}</div>}
       {line3 && <div style={{ fontSize: 11, color: '#64748b' }}>{line3}</div>}
     </div>
   )
@@ -380,7 +383,7 @@ export default function RefurbJobs() {
       </Card>
 
       <Card>
-        <Table headers={['Job #', 'Device', 'Engineer', 'Status', 'Opened', 'Parts', 'Actions']}>
+        <Table headers={['Job #', 'IMEI / Device', 'Engineer', 'Status', 'Opened', 'Parts', 'Actions']}>
           {visibleJobs.map(job => {
             const eng = engineers.find(u => u.id === job.assigned_engineer_id)
             return (
