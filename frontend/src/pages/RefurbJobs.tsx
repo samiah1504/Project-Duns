@@ -8,6 +8,30 @@ import {
 } from '../services/api'
 import { RefurbJob, Device, Part, User } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select, fmt } from '../components/Layout'
+import { useAuth } from '../hooks/useAuth'
+
+// ─── Who can do what (mirrors backend/app/routers/refurb_jobs.py) ────────────
+type Perms = {
+  createJob: boolean; assign: boolean; qc: boolean; scrapAfterQc: boolean
+  addParts: (job: RefurbJob) => boolean; complete: (job: RefurbJob) => boolean; closeFromBench: (job: RefurbJob) => boolean
+}
+function refurbPerms(user: User | null): Perms {
+  const role = user?.role ?? ''
+  const manager = role === 'ADMIN' || role === 'OPERATIONS'
+  const inventory = role === 'INVENTORY'
+  const engineer = role === 'ENGINEER'
+  // Engineers may only work on jobs assigned to them
+  const ownsJob = (job: RefurbJob) => !!user && job.assigned_engineer_id === user.id
+  return {
+    createJob: manager || engineer,
+    assign: manager || inventory,
+    qc: manager || inventory,
+    scrapAfterQc: manager || inventory,
+    addParts: job => manager || inventory || (engineer && ownsJob(job)),
+    complete: job => manager || (engineer && ownsJob(job)),
+    closeFromBench: job => manager || inventory || (engineer && ownsJob(job)),
+  }
+}
 
 const STATUS_META: Record<string, { label: string; bg: string; color: string }> = {
   open:        { label: 'Open — Awaiting Engineer', bg: '#eff6ff', color: '#1d4ed8' },
@@ -99,7 +123,7 @@ function AssignEngineerModal({ job, engineers, onClose }: { job: RefurbJob; engi
 
 // ─── Manage Job Modal (add parts + complete) ─────────────────────────────────
 
-function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]; onClose: () => void }) {
+function ManageJobModal({ job, parts, perms, onClose }: { job: RefurbJob; parts: Part[]; perms: Perms; onClose: () => void }) {
   const qc = useQueryClient()
   const [partId, setPartId] = useState('')
   const [qty, setQty] = useState('1')
@@ -141,7 +165,7 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
           </div>
         )}
 
-        <div>
+        {perms.addParts(job) && <div>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Add Parts</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={partId} onChange={e => setPartId(e.target.value)}
@@ -153,24 +177,24 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
               style={{ width: 60, padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13 }} />
             <Btn size="sm" disabled={!partId || addMut.isPending} onClick={() => addMut.mutate()}>Add</Btn>
           </div>
-        </div>
+        </div>}
 
-        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
-          <Input placeholder="Completion notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+        {(perms.complete(job) || perms.closeFromBench(job)) && <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+          {perms.complete(job) && <Input placeholder="Completion notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />}
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <Btn onClick={() => completeMut.mutate()} disabled={completeMut.isPending}>
+            {perms.complete(job) && <Btn onClick={() => completeMut.mutate()} disabled={completeMut.isPending}>
               {completeMut.isPending ? '…' : 'Mark Complete → Send to QC'}
-            </Btn>
-            <Btn variant="secondary" size="sm"
+            </Btn>}
+            {perms.closeFromBench(job) && <><Btn variant="secondary" size="sm"
               onClick={() => closeMut.mutate({ outcome: 'sent_external' })} disabled={closeMut.isPending}>
               Send External
             </Btn>
             <Btn variant="danger" size="sm"
               onClick={() => closeMut.mutate({ outcome: 'scrapped' })} disabled={closeMut.isPending}>
               Scrap
-            </Btn>
+            </Btn></>}
           </div>
-        </div>
+        </div>}
       </div>
     </Modal>
   )
@@ -223,7 +247,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
 
 // ─── Return to Engineer Modal ─────────────────────────────────────────────────
 
-function ReturnToEngineerModal({ job, engineers, onClose }: { job: RefurbJob; engineers: User[]; onClose: () => void }) {
+function ReturnToEngineerModal({ job, engineers, canScrap, onClose }: { job: RefurbJob; engineers: User[]; canScrap: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const [engId, setEngId] = useState(job.assigned_engineer_id ?? '')
   const [notes, setNotes] = useState('')
@@ -234,19 +258,31 @@ function ReturnToEngineerModal({ job, engineers, onClose }: { job: RefurbJob; en
     onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
   })
 
+  const scrapMut = useMutation({
+    mutationFn: () => closeRefurbJob(job.id, { outcome: 'scrapped', notes: notes || 'Scrapped after failed QC' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['refurb-jobs'] }); toast.success('Device scrapped'); onClose() },
+    onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
+  })
+
   return (
-    <Modal open={true} title={`Return to Engineer — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
+    <Modal open={true} title={`QC Failed — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ padding: '8px 12px', background: '#fee2e2', borderRadius: 6, fontSize: 13, color: '#991b1b' }}>
-          QC failed. Return device to engineer for rework.
+          QC failed. Return the device to an engineer for rework{canScrap ? ', or scrap it if it is beyond repair' : ''}.
         </div>
         <Select value={engId} onChange={e => setEngId(e.target.value)}>
           <option value="">Same engineer</option>
           {engineers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </Select>
-        <Input placeholder="Rework instructions" value={notes} onChange={e => setNotes(e.target.value)} />
+        <Input placeholder="Rework instructions / scrap reason" value={notes} onChange={e => setNotes(e.target.value)} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+          {canScrap && (
+            <Btn variant="danger" disabled={scrapMut.isPending || mut.isPending}
+              onClick={() => { if (window.confirm('Scrap this device? This cannot be undone.')) scrapMut.mutate() }}>
+              {scrapMut.isPending ? '…' : 'Scrap Device'}
+            </Btn>
+          )}
           <Btn onClick={() => mut.mutate()} disabled={mut.isPending}>
             {mut.isPending ? '…' : 'Return to Engineer'}
           </Btn>
@@ -309,6 +345,8 @@ export default function RefurbJobs() {
   const [filterStatus, setFilterStatus] = useState('')
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
+  const { user } = useAuth()
+  const perms = refurbPerms(user)
 
   // Searching (IMEI, inventory # or job #) goes to the server and covers ALL jobs,
   // including closed ones, so any device's refurb history can be traced.
@@ -351,7 +389,7 @@ export default function RefurbJobs() {
     <div>
       <PageHeader
         title="Refurb Jobs"
-        action={<Btn onClick={() => setModal({ type: 'new' })}>+ New Job</Btn>}
+        action={perms.createJob ? <Btn onClick={() => setModal({ type: 'new' })}>+ New Job</Btn> : undefined}
       />
 
       <Card style={{ marginBottom: 8, padding: '8px 16px', background: '#eff6ff', borderColor: '#93c5fd' }}>
@@ -401,24 +439,24 @@ export default function RefurbJobs() {
                 <TD style={{ color: '#64748b', fontSize: 12 }}>{job.parts_used.length}</TD>
                 <TD>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {job.status === 'open' && (
+                    {job.status === 'open' && perms.assign && (
                       <Btn size="sm" onClick={() => setModal({ type: 'assign', job })}>
                         Assign Engineer
                       </Btn>
                     )}
-                    {job.status === 'in_progress' && (
+                    {job.status === 'in_progress' && (perms.addParts(job) || perms.complete(job)) && (
                       <Btn size="sm" onClick={() => setModal({ type: 'manage', job })}>
                         Manage / Parts
                       </Btn>
                     )}
-                    {job.status === 'awaiting_qc' && (
+                    {job.status === 'awaiting_qc' && perms.qc && (
                       <Btn size="sm" variant="ghost" onClick={() => setModal({ type: 'qc', job })}>
                         QC Check
                       </Btn>
                     )}
-                    {job.status === 'qc_failed' && (
+                    {job.status === 'qc_failed' && perms.qc && (
                       <Btn size="sm" variant="danger" onClick={() => setModal({ type: 'return', job })}>
-                        Return to Engineer
+                        Rework / Scrap
                       </Btn>
                     )}
                   </div>
@@ -448,13 +486,13 @@ export default function RefurbJobs() {
         <AssignEngineerModal job={modal.job} engineers={engineerUsers} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'manage' && (
-        <ManageJobModal job={liveJob(modal.job)} parts={parts} onClose={() => setModal(null)} />
+        <ManageJobModal job={liveJob(modal.job)} parts={parts} perms={perms} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'qc' && (
         <QCModal job={modal.job} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'return' && (
-        <ReturnToEngineerModal job={modal.job} engineers={engineerUsers} onClose={() => setModal(null)} />
+        <ReturnToEngineerModal job={modal.job} engineers={engineerUsers} canScrap={perms.scrapAfterQc} onClose={() => setModal(null)} />
       )}
     </div>
   )

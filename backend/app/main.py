@@ -392,7 +392,7 @@ async def lifespan(app: FastAPI):
                INSERT INTO refurb_jobs (id, job_number, device_id, status, date_opened, auto_created, external_cost, created_at)
                SELECT
                  gen_random_uuid(),
-                 'JOB-MIGR-' || ROW_NUMBER() OVER (ORDER BY d.created_at),
+                 'JOB-MIGR-' || upper(substr(md5(d.id::text || clock_timestamp()::text), 1, 12)),
                  d.id,
                  'open',
                  CURRENT_DATE,

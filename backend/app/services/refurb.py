@@ -4,6 +4,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 
 from app.models.refurb_job import RefurbJob, RefurbJobPart, JobStatus, JobOutcome
 from app.models.device import Device, DeviceStatus, DeviceLocation, DeviceGrade
@@ -15,15 +16,36 @@ from app.core.exceptions import BadRequestError, NotFoundError
 
 
 async def generate_job_number(db: AsyncSession) -> str:
+    """Next JOB-YYYYMMDD-NNN number. Uses the highest existing suffix for today
+    (not a row count, which repeats numbers if a job is ever removed)."""
     today = date.today().strftime("%Y%m%d")
     prefix = f"JOB-{today}-"
     result = await db.execute(
-        select(func.count(RefurbJob.id)).where(
-            RefurbJob.job_number.like(f"{prefix}%")
-        )
+        select(RefurbJob.job_number).where(RefurbJob.job_number.like(f"{prefix}%"))
     )
-    count = result.scalar() or 0
-    return f"{prefix}{str(count + 1).zfill(3)}"
+    highest = 0
+    for (num,) in result.all():
+        suffix = num[len(prefix):]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return f"{prefix}{str(highest + 1).zfill(3)}"
+
+
+async def _insert_job(db: AsyncSession, **fields) -> RefurbJob:
+    """Insert a refurb job with a fresh job number. If two requests pick the same
+    number at the same moment, the unique index rejects one; it retries with the
+    next number instead of failing with a server error."""
+    for _ in range(5):
+        job = RefurbJob(job_number=await generate_job_number(db), **fields)
+        try:
+            async with db.begin_nested():
+                db.add(job)
+                await db.flush()
+            return job
+        except IntegrityError as exc:
+            if "job_number" not in str(exc.orig):
+                raise
+    raise BadRequestError("Could not allocate a job number, please retry")
 
 
 async def _get_device(db: AsyncSession, device_id: str) -> Device:
@@ -79,16 +101,13 @@ async def ensure_refurb_job(
         return existing_job
 
     device = await _get_device(db, device_id)
-    job_number = await generate_job_number(db)
-    job = RefurbJob(
-        job_number=job_number,
+    job = await _insert_job(
+        db,
         device_id=device_id,
         status=JobStatus.OPEN,
         date_opened=date.today(),
         auto_created=True,
     )
-    db.add(job)
-    await db.flush()
 
     await write_audit(
         db,
@@ -143,9 +162,8 @@ async def create_refurb_job(
             return await assign_engineer(db, existing.id, assigned_engineer_id, user_id)
         return existing
 
-    job_number = await generate_job_number(db)
-    job = RefurbJob(
-        job_number=job_number,
+    job = await _insert_job(
+        db,
         device_id=device_id,
         status=JobStatus.OPEN,
         fault_description=fault_description,
@@ -153,8 +171,6 @@ async def create_refurb_job(
         notes=notes,
         auto_created=False,
     )
-    db.add(job)
-    await db.flush()
 
     await write_audit(
         db,
@@ -518,6 +534,8 @@ _EXIT_OUTCOMES: dict[DeviceStatus, Optional[JobOutcome]] = {
     DeviceStatus.SCRAPPED: JobOutcome.SCRAPPED,
     DeviceStatus.HARVESTED: JobOutcome.SCRAPPED,
     DeviceStatus.STOCK_TO_RETURN: None,
+    DeviceStatus.RESERVED: None,
+    DeviceStatus.SOLD: None,
 }
 
 
@@ -548,16 +566,14 @@ async def sync_job_after_transfer(
             DeviceStatus.FAILED_QC: JobStatus.QC_FAILED,
         }[status]
         if not job:
-            job = RefurbJob(
-                job_number=await generate_job_number(db),
+            job = await _insert_job(
+                db,
                 device_id=device.id,
                 status=target,
                 date_opened=date.today(),
                 auto_created=True,
                 notes="Opened automatically on device transfer",
             )
-            db.add(job)
-            await db.flush()
             await write_audit(
                 db,
                 user_id=user_id,

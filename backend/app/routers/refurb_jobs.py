@@ -24,6 +24,19 @@ from app.models.user import User
 router = APIRouter()
 
 
+def _role(user) -> str:
+    return getattr(user.role, "value", user.role)
+
+
+async def _require_own_job_if_engineer(db: AsyncSession, job_id: str, user) -> None:
+    """Engineers may only work on jobs assigned to them; managers/inventory are not limited."""
+    if _role(user) != "ENGINEER":
+        return
+    job = await _fetch_job(db, job_id)
+    if job.assigned_engineer_id != user.id:
+        raise ForbiddenError(f"Job {job.job_number} is not assigned to you")
+
+
 def _job_query():
     return select(RefurbJob).options(
         selectinload(RefurbJob.parts_used),
@@ -129,6 +142,7 @@ async def add_parts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(engineer_or_inventory()),
 ):
+    await _require_own_job_if_engineer(db, job_id, current_user)
     job = await add_parts_to_job(db, job_id=job_id, parts_data=body.parts, user_id=current_user.id)
     await db.commit()
     return await _fetch_job(db, job.id)
@@ -142,6 +156,7 @@ async def complete_job(
     current_user: User = Depends(engineer_or_admin()),
 ):
     """Engineer marks refurb done — device moves to AWAITING_QC."""
+    await _require_own_job_if_engineer(db, job_id, current_user)
     job = await complete_refurb(
         db,
         job_id=job_id,
@@ -213,12 +228,12 @@ async def close_job(
     job_id: str,
     body: CloseJobRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(engineer_or_admin()),
+    current_user: User = Depends(engineer_or_inventory()),
 ):
     # Closing as REGRADED makes the device SELLABLE without QC — managers only.
-    role = getattr(current_user.role, "value", current_user.role)
-    if body.outcome == JobOutcome.REGRADED and role not in ("ADMIN", "OPERATIONS"):
+    if body.outcome == JobOutcome.REGRADED and _role(current_user) not in ("ADMIN", "OPERATIONS"):
         raise ForbiddenError("Only ADMIN or OPERATIONS can return a device to stock without QC")
+    await _require_own_job_if_engineer(db, job_id, current_user)
     job = await close_refurb_job(
         db,
         job_id=job_id,
