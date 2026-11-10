@@ -312,6 +312,7 @@ export interface RefurbJob {
   external_cost: string
   notes?: string
   auto_created?: boolean
+  customer_repair?: boolean    // customer's phone: passing QC returns it to the customer, not to stock
   created_at: string
   parts_used: RefurbJobPart[]
 }

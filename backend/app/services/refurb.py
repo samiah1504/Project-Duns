@@ -10,6 +10,7 @@ from app.models.refurb_job import RefurbJob, RefurbJobPart, JobStatus, JobOutcom
 from app.models.device import Device, DeviceStatus, DeviceLocation, DeviceGrade
 from app.models.part import Part
 from app.models.audit_log import ReferenceType
+from app.models.return_rma import ReturnRMA, ReturnResolution
 from app.services.audit import write_audit
 from app.services.device_state_machine import validate_transition
 from app.core.exceptions import BadRequestError, NotFoundError
@@ -31,10 +32,31 @@ async def generate_job_number(db: AsyncSession) -> str:
     return f"{prefix}{str(highest + 1).zfill(3)}"
 
 
+async def _pending_customer_repair(db: AsyncSession, device_id: str) -> Optional[ReturnRMA]:
+    """The device's latest return, if it was resolved as repair & return to the
+    customer — i.e. the phone in refurb belongs to the customer, not to stock."""
+    result = await db.execute(
+        select(ReturnRMA).where(ReturnRMA.device_id == device_id)
+        .order_by(ReturnRMA.created_at.desc()).limit(1)
+    )
+    rma = result.scalar_one_or_none()
+    if rma and rma.resolution == ReturnResolution.REPAIR_AND_RETURN:
+        return rma
+    return None
+
+
 async def _insert_job(db: AsyncSession, **fields) -> RefurbJob:
     """Insert a refurb job with a fresh job number. If two requests pick the same
     number at the same moment, the unique index rejects one; it retries with the
-    next number instead of failing with a server error."""
+    next number instead of failing with a server error.
+
+    Jobs for a customer's phone under repair & return are flagged customer_repair."""
+    if "customer_repair" not in fields:
+        rma = await _pending_customer_repair(db, fields["device_id"])
+        fields["customer_repair"] = rma is not None
+        if rma:
+            note = f"Customer repair for return {rma.rma_number} — return phone to customer after QC"
+            fields["notes"] = (fields["notes"] + "\n" if fields.get("notes") else "") + note
     for _ in range(5):
         job = RefurbJob(job_number=await generate_job_number(db), **fields)
         try:
@@ -270,6 +292,19 @@ async def complete_refurb(
     return job
 
 
+def _after_successful_refurb(job: RefurbJob, device: Device) -> DeviceStatus:
+    """Where a device goes once its repair is done: a customer's phone goes back
+    to the customer (SOLD, still on its original sale); stock goes to SELLABLE."""
+    if job.customer_repair:
+        if device.status not in (DeviceStatus.AWAITING_QC, DeviceStatus.IN_REFURB, DeviceStatus.AWAITING_REFURB):
+            raise BadRequestError(
+                f"Device {device.imei} is {device.status.value}; cannot return it to the customer from here"
+            )
+        return DeviceStatus.SOLD
+    validate_transition(device.status, DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK)
+    return DeviceStatus.SELLABLE
+
+
 async def pass_qc(
     db: AsyncSession,
     job_id: str,
@@ -286,8 +321,8 @@ async def pass_qc(
     old_status = device.status
     old_location = device.location
 
-    validate_transition(old_status, DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK)
-    device.status = DeviceStatus.SELLABLE
+    to_status = _after_successful_refurb(job, device)
+    device.status = to_status
     device.location = DeviceLocation.SALES_STOCK
     device.custody_user_id = None
     if new_grade:
@@ -304,12 +339,16 @@ async def pass_qc(
         user_id=user_id,
         device_id=device.id,
         from_status=old_status.value,
-        to_status=DeviceStatus.SELLABLE.value,
+        to_status=to_status.value,
         from_location=old_location.value,
         to_location=DeviceLocation.SALES_STOCK.value,
         reference_type=ReferenceType.JOB,
         reference_id=job.job_number,
-        notes=f"QC passed — {_dev_label(device)} back in sales stock (SELLABLE): {job.job_number}",
+        notes=(
+            f"QC passed — {_dev_label(device)} repaired, READY TO RETURN TO CUSTOMER (SOLD): {job.job_number}"
+            if job.customer_repair else
+            f"QC passed — {_dev_label(device)} back in sales stock (SELLABLE): {job.job_number}"
+        ),
     )
     return job
 
@@ -481,7 +520,7 @@ async def close_refurb_job(
     old_location = device.location
 
     if outcome == JobOutcome.REGRADED:
-        to_status = DeviceStatus.SELLABLE
+        to_status = _after_successful_refurb(job, device)
         to_location = DeviceLocation.SALES_STOCK
         if new_grade:
             device.grade = new_grade
@@ -499,7 +538,8 @@ async def close_refurb_job(
     else:
         raise BadRequestError(f"Unknown outcome: {outcome}")
 
-    validate_transition(old_status, to_status, to_location)
+    if to_status != DeviceStatus.SOLD:  # SOLD (customer repair) is checked in _after_successful_refurb
+        validate_transition(old_status, to_status, to_location)
     device.status = to_status
     device.location = to_location
     device.custody_user_id = None

@@ -387,9 +387,10 @@ async def lifespan(app: FastAPI):
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel='qc_failed' AND enumtypid=(SELECT oid FROM pg_type WHERE typname='jobstatus')) THEN ALTER TYPE jobstatus ADD VALUE 'qc_failed'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END $$",
             # Auto-created flag on refurb jobs
             "ALTER TABLE refurb_jobs ADD COLUMN IF NOT EXISTS auto_created BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE refurb_jobs ADD COLUMN IF NOT EXISTS customer_repair BOOLEAN NOT NULL DEFAULT FALSE",
             # Backfill: create refurb jobs for existing AWAITING_REFURB devices without an active job
             """DO $$ BEGIN
-               INSERT INTO refurb_jobs (id, job_number, device_id, status, date_opened, auto_created, external_cost, created_at)
+               INSERT INTO refurb_jobs (id, job_number, device_id, status, date_opened, auto_created, customer_repair, external_cost, created_at)
                SELECT
                  gen_random_uuid(),
                  'JOB-MIGR-' || upper(substr(md5(d.id::text || clock_timestamp()::text), 1, 12)),
@@ -397,6 +398,7 @@ async def lifespan(app: FastAPI):
                  'open',
                  CURRENT_DATE,
                  TRUE,
+                 FALSE,
                  0.00,
                  NOW()
                FROM devices d

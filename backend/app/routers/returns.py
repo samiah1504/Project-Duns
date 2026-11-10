@@ -117,8 +117,15 @@ async def resolve_item(
         notes=body.notes,
     )
     await db.commit()
-    await db.refresh(rma)
-    return rma
+    # Reload with the device eagerly loaded: the response includes it, and a lazy
+    # load during serialisation fails under the async driver (500).
+    result = await db.execute(
+        select(ReturnRMA)
+        .where(ReturnRMA.id == rma.id)
+        .options(selectinload(ReturnRMA.device))
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one()
 
 
 # ── Legacy single-RMA endpoints (kept for backward compat) ───────────────────

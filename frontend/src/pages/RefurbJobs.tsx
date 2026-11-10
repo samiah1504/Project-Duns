@@ -80,6 +80,25 @@ function DeviceCell({ job }: { job: RefurbJob }) {
   )
 }
 
+/** Shown on jobs for a customer's own phone (return resolved as repair & return). */
+function CustomerRepairNote() {
+  return (
+    <div style={{ padding: '8px 12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 6, fontSize: 13, color: '#9a3412' }}>
+      <strong>Customer repair.</strong> This is the customer's own phone. Passing QC marks it ready to return
+      to the customer (status Sold). It does not go into sellable stock.
+    </div>
+  )
+}
+
+function CustomerRepairTag() {
+  return (
+    <div style={{ display: 'inline-block', marginTop: 2, fontSize: 10, fontWeight: 700, color: '#9a3412',
+      background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 4, padding: '1px 6px' }}>
+      CUSTOMER REPAIR
+    </div>
+  )
+}
+
 function JobStatusBadge({ status }: { status: string }) {
   const m = STATUS_META[status] ?? { label: status, bg: '#f1f5f9', color: '#64748b' }
   return (
@@ -150,6 +169,7 @@ function ManageJobModal({ job, parts, perms, onClose }: { job: RefurbJob; parts:
   return (
     <Modal open={true} title={`${job.job_number} — With Engineer${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {job.customer_repair && <CustomerRepairNote />}
         {job.parts_used.length > 0 && (
           <div style={{ fontSize: 12, color: '#64748b' }}>
             <div style={{ fontWeight: 700, marginBottom: 3 }}>Parts used:</div>
@@ -209,7 +229,11 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
 
   const passMut = useMutation({
     mutationFn: () => passQCJob(job.id, { new_grade: newGrade || undefined, notes }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['refurb-jobs'] }); toast.success('QC passed — device is now SELLABLE'); onClose() },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['refurb-jobs'] })
+      toast.success(job.customer_repair ? 'QC passed — ready to return to the customer' : 'QC passed — device is now SELLABLE')
+      onClose()
+    },
     onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
   })
 
@@ -225,6 +249,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
         <div style={{ padding: '8px 12px', background: '#ede9fe', borderRadius: 6, fontSize: 13, color: '#5b21b6' }}>
           Device is awaiting quality check. Record the inspection result.
         </div>
+        {job.customer_repair && <CustomerRepairNote />}
         <Select value={newGrade} onChange={e => setNewGrade(e.target.value)}>
           <option value="">Grade unchanged</option>
           <option value="A">Upgrade to Grade A</option>
@@ -234,7 +259,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
         <Input placeholder="QC notes" value={notes} onChange={e => setNotes(e.target.value)} />
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn onClick={() => passMut.mutate()} disabled={passMut.isPending}>
-            {passMut.isPending ? '…' : '✓ Pass QC — Move to Sellable'}
+            {passMut.isPending ? '…' : job.customer_repair ? '✓ Pass QC — Return to Customer' : '✓ Pass QC — Move to Sellable'}
           </Btn>
           <Btn variant="danger" onClick={() => failMut.mutate()} disabled={failMut.isPending}>
             {failMut.isPending ? '…' : '✗ Fail QC — Return to Bench'}
@@ -431,6 +456,7 @@ export default function RefurbJobs() {
                   {job.auto_created && (
                     <div style={{ fontSize: 10, color: '#94a3b8' }}>auto</div>
                   )}
+                  {job.customer_repair && <CustomerRepairTag />}
                 </TD>
                 <TD><DeviceCell job={job} /></TD>
                 <TD style={{ color: eng ? '#1e293b' : '#94a3b8' }}>{eng?.name ?? 'Unassigned'}</TD>

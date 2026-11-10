@@ -111,6 +111,7 @@ class RefurbJobOut(BaseModel):
     external_cost: Decimal
     notes: Optional[str] = None
     auto_created: bool = False
+    customer_repair: bool = False
     created_at: datetime
     parts_used: List[RefurbJobPartOut] = []
 

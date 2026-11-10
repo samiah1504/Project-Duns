@@ -17,6 +17,10 @@ What it fixes
 4. Jobs whose status doesn't match the device, e.g. a job stuck "in progress"
    while the device still awaits refurb (parts added before an engineer was
    assigned): the job is put back in step with the device.
+5. Customer phones from "repair & return" returns: phones left on the bench
+   with no engineer and no job are put back to awaiting refurb so an engineer
+   can be assigned, and their jobs are flagged as customer repairs so passing QC
+   returns them to the customer instead of putting them into stock.
 
 Devices in RETURNED status are left alone: an OPEN job there is legitimate.
 Every change is written to the device's audit history.
@@ -29,11 +33,13 @@ from sqlalchemy import select, func, or_
 
 from app.database import AsyncSessionLocal
 from app.models import *  # noqa: F401,F403 — register all mappers
-from app.models.device import Device, DeviceStatus
+from app.models.device import Device, DeviceStatus, DeviceLocation
 from app.models.refurb_job import RefurbJob, JobStatus
 from app.models.audit_log import ReferenceType
 from app.services.audit import write_audit
-from app.services.refurb import sync_job_after_transfer, _ACTIVE_STATUSES, _sv
+from app.services.refurb import (
+    sync_job_after_transfer, _ACTIVE_STATUSES, _sv, _get_active_job, _pending_customer_repair,
+)
 
 REFURB_STATUSES = [
     DeviceStatus.AWAITING_REFURB, DeviceStatus.IN_REFURB,
@@ -90,9 +96,37 @@ async def run(apply: bool) -> int:
         for device in res.scalars().all():
             if device.status == DeviceStatus.RETURNED:
                 continue
+            rma = await _pending_customer_repair(db, device.id)
+            # 5a. Repair & return phone left on the bench with nobody assigned
+            if (rma and device.status == DeviceStatus.IN_REFURB and not device.custody_user_id
+                    and not await _get_active_job(db, device.id)):
+                old_status, old_loc = device.status.value, device.location.value
+                device.status = DeviceStatus.AWAITING_REFURB
+                device.location = DeviceLocation.INTAKE
+                changes.append(f"IMEI {device.imei}: customer repair ({rma.rma_number}) on bench with no engineer -> AWAITING_REFURB")
+                await write_audit(
+                    db, user_id=None, device_id=device.id,
+                    from_status=old_status, to_status=device.status.value,
+                    from_location=old_loc, to_location=device.location.value,
+                    reference_type=ReferenceType.RETURN, reference_id=rma.rma_number,
+                    notes="Refurb data repair: customer repair queued for an engineer",
+                )
             before = _snap(await _jobs_for(db, device.id))
             await sync_job_after_transfer(db, device, None)
             await db.flush()
+            # 5b. Flag the active job of a pending customer repair
+            active = await _get_active_job(db, device.id)
+            if rma and active and not active.customer_repair:
+                active.customer_repair = True
+                active.notes = (active.notes + "\n" if active.notes else "") + (
+                    f"Customer repair for return {rma.rma_number} — return phone to customer after QC"
+                )
+                changes.append(f"IMEI {device.imei}: job {active.job_number} flagged as customer repair ({rma.rma_number})")
+                await write_audit(
+                    db, user_id=None, device_id=device.id,
+                    reference_type=ReferenceType.JOB, reference_id=active.job_number,
+                    notes=f"Refurb data repair: flagged as customer repair for {rma.rma_number}",
+                )
             after = _snap(await _jobs_for(db, device.id))
             if before == after:
                 continue
