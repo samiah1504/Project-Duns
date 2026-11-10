@@ -634,12 +634,12 @@ function CeoDashboard() {
                 <StatCard label="Awaiting Refurb" value={rf.awaiting} color="#f59e0b"
                   onClick={() => navigate('/devices?status=AWAITING_REFURB')} />
                 <StatCard label="On the Bench" value={rf.in_progress} color="#f97316"
-                  onClick={() => navigate('/refurb-jobs')} />
+                  onClick={() => navigate('/refurb')} />
                 <StatCard label="Closed (Period)" value={rf.closed_period} color="#22c55e"
                   sub={`${rf.success_rate ?? '—'}% success rate`}
-                  onClick={() => navigate('/refurb-jobs')} />
+                  onClick={() => navigate('/refurb')} />
                 <StatCard label="Successfully Refurbed" value={rf.successful_period} color="#16a34a"
-                  onClick={() => navigate('/refurb-jobs')} />
+                  onClick={() => navigate('/refurb')} />
                 <StatCard label="Sent External" value={rf.sent_external_period} color="#8b5cf6"
                   onClick={() => navigate('/devices?status=SENT_EXTERNAL')} />
                 <StatCard label="Scrapped" value={rf.scrapped_period} color="#ef4444"
@@ -729,7 +729,7 @@ function CeoDashboard() {
                 <StatCard label="Restocked" value={re.restocked} color="#22c55e"
                   onClick={() => navigate('/returns')} />
                 <StatCard label="Returned to Refurb" value={re.returned_to_refurb} color="#f59e0b"
-                  onClick={() => navigate('/refurb-jobs')} />
+                  onClick={() => navigate('/refurb')} />
                 <StatCard label="Scrapped After Return" value={re.scrapped_after_return} color="#ef4444"
                   onClick={() => navigate('/returns')} />
               </CardRow>
@@ -778,7 +778,7 @@ function CeoDashboard() {
                 color="#f59e0b" onClick={() => navigate('/parts')} />
               <AlertRow icon="🔧" count={al.long_in_refurb}
                 label="devices spending more than 7 days in refurbishment"
-                color="#f97316" onClick={() => navigate('/refurb-jobs')} />
+                color="#f97316" onClick={() => navigate('/refurb')} />
               <AlertRow icon="🛠️" count={al.overdue_external}
                 label="external repairs overdue (>14 days)"
                 color="#ef4444" onClick={() => navigate('/devices?status=SENT_EXTERNAL')} />

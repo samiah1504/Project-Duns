@@ -8,6 +8,30 @@ import {
 } from '../services/api'
 import { RefurbJob, Device, Part, User } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select, fmt } from '../components/Layout'
+import { useAuth } from '../hooks/useAuth'
+
+// ─── Who can do what (mirrors backend/app/routers/refurb_jobs.py) ────────────
+type Perms = {
+  createJob: boolean; assign: boolean; qc: boolean; scrapAfterQc: boolean
+  addParts: (job: RefurbJob) => boolean; complete: (job: RefurbJob) => boolean; closeFromBench: (job: RefurbJob) => boolean
+}
+function refurbPerms(user: User | null): Perms {
+  const role = user?.role ?? ''
+  const manager = role === 'ADMIN' || role === 'OPERATIONS'
+  const inventory = role === 'INVENTORY'
+  const engineer = role === 'ENGINEER'
+  // Engineers may only work on jobs assigned to them
+  const ownsJob = (job: RefurbJob) => !!user && job.assigned_engineer_id === user.id
+  return {
+    createJob: manager || engineer,
+    assign: manager || inventory,
+    qc: manager || inventory,
+    scrapAfterQc: manager || inventory,
+    addParts: job => manager || inventory || (engineer && ownsJob(job)),
+    complete: job => manager || (engineer && ownsJob(job)),
+    closeFromBench: job => manager || inventory || (engineer && ownsJob(job)),
+  }
+}
 
 const STATUS_META: Record<string, { label: string; bg: string; color: string }> = {
   open:        { label: 'Open — Awaiting Engineer', bg: '#eff6ff', color: '#1d4ed8' },
@@ -27,28 +51,50 @@ function deviceTitle(job: RefurbJob): string {
   return m.colour ? `${main} · ${m.colour}` : main
 }
 
-/** Short one-liner for modal headers: "iPhone 13 Pro 128GB · IMEI: 3567…" */
+/** IMEI for a job — the identifier users trace devices by. */
+function jobImei(job: RefurbJob): string | null {
+  return job.device?.imei ?? job.device_imei ?? null
+}
+
+/** Short one-liner for modal headers: "IMEI: 3567… · iPhone 13 Pro 128GB" */
 function deviceShort(job: RefurbJob): string {
-  const d = job.device
-  if (!d) return ''
-  const title = deviceTitle(job)
-  const id = d.imei ? `IMEI: ${d.imei}` : (d.inventory_number ?? '')
-  return [title, id].filter(Boolean).join(' · ')
+  const imei = jobImei(job)
+  const id = imei ? `IMEI: ${imei}` : (job.device?.inventory_number ?? job.device_inventory_number ?? '')
+  return [id, deviceTitle(job)].filter(Boolean).join(' · ')
 }
 
 function DeviceCell({ job }: { job: RefurbJob }) {
   const d = job.device
-  if (!d) {
-    // Fallback for jobs whose device could not be loaded
-    return <code style={{ fontSize: 11 }}>{job.device_id.slice(0, 8)}…</code>
-  }
+  const imei = jobImei(job)
   const title = deviceTitle(job)
-  const line3 = [d.inventory_number, d.grade ? `Grade ${d.grade}` : ''].filter(Boolean).join(' · ')
+  const invNo = d?.inventory_number ?? job.device_inventory_number
+  const line3 = [invNo, d?.grade ? `Grade ${d.grade}` : ''].filter(Boolean).join(' · ')
   return (
     <div>
-      <div style={{ fontWeight: 700, fontSize: 13 }}>{title || '(model unknown)'}</div>
-      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#334155' }}>IMEI: {d.imei}</div>
+      <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+        {imei ?? <span style={{ color: '#94a3b8', fontFamily: 'inherit', fontWeight: 400 }}>IMEI unavailable</span>}
+      </div>
+      {title && <div style={{ fontSize: 12, color: '#334155' }}>{title}</div>}
       {line3 && <div style={{ fontSize: 11, color: '#64748b' }}>{line3}</div>}
+    </div>
+  )
+}
+
+/** Shown on jobs for a customer's own phone (return resolved as repair & return). */
+function CustomerRepairNote() {
+  return (
+    <div style={{ padding: '8px 12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 6, fontSize: 13, color: '#9a3412' }}>
+      <strong>Customer repair.</strong> This is the customer's own phone. Passing QC marks it ready to return
+      to the customer (status Sold). It does not go into sellable stock.
+    </div>
+  )
+}
+
+function CustomerRepairTag() {
+  return (
+    <div style={{ display: 'inline-block', marginTop: 2, fontSize: 10, fontWeight: 700, color: '#9a3412',
+      background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 4, padding: '1px 6px' }}>
+      CUSTOMER REPAIR
     </div>
   )
 }
@@ -96,14 +142,14 @@ function AssignEngineerModal({ job, engineers, onClose }: { job: RefurbJob; engi
 
 // ─── Manage Job Modal (add parts + complete) ─────────────────────────────────
 
-function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]; onClose: () => void }) {
+function ManageJobModal({ job, parts, perms, onClose }: { job: RefurbJob; parts: Part[]; perms: Perms; onClose: () => void }) {
   const qc = useQueryClient()
   const [partId, setPartId] = useState('')
   const [qty, setQty] = useState('1')
   const [notes, setNotes] = useState('')
 
   const addMut = useMutation({
-    mutationFn: () => addPartsToJob(job.id, { parts: [{ part_id: partId, quantity: parseInt(qty) }] }),
+    mutationFn: () => addPartsToJob(job.id, { parts: [{ part_id: partId, quantity: Math.max(1, parseInt(qty) || 1) }] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['refurb-jobs'] }); toast.success('Parts added') },
     onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
   })
@@ -123,6 +169,7 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
   return (
     <Modal open={true} title={`${job.job_number} — With Engineer${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {job.customer_repair && <CustomerRepairNote />}
         {job.parts_used.length > 0 && (
           <div style={{ fontSize: 12, color: '#64748b' }}>
             <div style={{ fontWeight: 700, marginBottom: 3 }}>Parts used:</div>
@@ -138,7 +185,7 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
           </div>
         )}
 
-        <div>
+        {perms.addParts(job) && <div>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Add Parts</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={partId} onChange={e => setPartId(e.target.value)}
@@ -150,24 +197,24 @@ function ManageJobModal({ job, parts, onClose }: { job: RefurbJob; parts: Part[]
               style={{ width: 60, padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13 }} />
             <Btn size="sm" disabled={!partId || addMut.isPending} onClick={() => addMut.mutate()}>Add</Btn>
           </div>
-        </div>
+        </div>}
 
-        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
-          <Input placeholder="Completion notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+        {(perms.complete(job) || perms.closeFromBench(job)) && <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+          {perms.complete(job) && <Input placeholder="Completion notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />}
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <Btn onClick={() => completeMut.mutate()} disabled={completeMut.isPending}>
+            {perms.complete(job) && <Btn onClick={() => completeMut.mutate()} disabled={completeMut.isPending}>
               {completeMut.isPending ? '…' : 'Mark Complete → Send to QC'}
-            </Btn>
-            <Btn variant="secondary" size="sm"
+            </Btn>}
+            {perms.closeFromBench(job) && <><Btn variant="secondary" size="sm"
               onClick={() => closeMut.mutate({ outcome: 'sent_external' })} disabled={closeMut.isPending}>
               Send External
             </Btn>
             <Btn variant="danger" size="sm"
               onClick={() => closeMut.mutate({ outcome: 'scrapped' })} disabled={closeMut.isPending}>
               Scrap
-            </Btn>
+            </Btn></>}
           </div>
-        </div>
+        </div>}
       </div>
     </Modal>
   )
@@ -182,7 +229,11 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
 
   const passMut = useMutation({
     mutationFn: () => passQCJob(job.id, { new_grade: newGrade || undefined, notes }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['refurb-jobs'] }); toast.success('QC passed — device is now SELLABLE'); onClose() },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['refurb-jobs'] })
+      toast.success(job.customer_repair ? 'QC passed — ready to return to the customer' : 'QC passed — device is now SELLABLE')
+      onClose()
+    },
     onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
   })
 
@@ -198,6 +249,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
         <div style={{ padding: '8px 12px', background: '#ede9fe', borderRadius: 6, fontSize: 13, color: '#5b21b6' }}>
           Device is awaiting quality check. Record the inspection result.
         </div>
+        {job.customer_repair && <CustomerRepairNote />}
         <Select value={newGrade} onChange={e => setNewGrade(e.target.value)}>
           <option value="">Grade unchanged</option>
           <option value="A">Upgrade to Grade A</option>
@@ -207,7 +259,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
         <Input placeholder="QC notes" value={notes} onChange={e => setNotes(e.target.value)} />
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn onClick={() => passMut.mutate()} disabled={passMut.isPending}>
-            {passMut.isPending ? '…' : '✓ Pass QC — Move to Sellable'}
+            {passMut.isPending ? '…' : job.customer_repair ? '✓ Pass QC — Return to Customer' : '✓ Pass QC — Move to Sellable'}
           </Btn>
           <Btn variant="danger" onClick={() => failMut.mutate()} disabled={failMut.isPending}>
             {failMut.isPending ? '…' : '✗ Fail QC — Return to Bench'}
@@ -220,7 +272,7 @@ function QCModal({ job, onClose }: { job: RefurbJob; onClose: () => void }) {
 
 // ─── Return to Engineer Modal ─────────────────────────────────────────────────
 
-function ReturnToEngineerModal({ job, engineers, onClose }: { job: RefurbJob; engineers: User[]; onClose: () => void }) {
+function ReturnToEngineerModal({ job, engineers, canScrap, onClose }: { job: RefurbJob; engineers: User[]; canScrap: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const [engId, setEngId] = useState(job.assigned_engineer_id ?? '')
   const [notes, setNotes] = useState('')
@@ -231,19 +283,31 @@ function ReturnToEngineerModal({ job, engineers, onClose }: { job: RefurbJob; en
     onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
   })
 
+  const scrapMut = useMutation({
+    mutationFn: () => closeRefurbJob(job.id, { outcome: 'scrapped', notes: notes || 'Scrapped after failed QC' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['refurb-jobs'] }); toast.success('Device scrapped'); onClose() },
+    onError: (e: { response?: { data?: { detail?: string } } }) => toast.error(e.response?.data?.detail ?? 'Error'),
+  })
+
   return (
-    <Modal open={true} title={`Return to Engineer — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
+    <Modal open={true} title={`QC Failed — ${job.job_number}${deviceShort(job) ? " · " + deviceShort(job) : ""}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ padding: '8px 12px', background: '#fee2e2', borderRadius: 6, fontSize: 13, color: '#991b1b' }}>
-          QC failed. Return device to engineer for rework.
+          QC failed. Return the device to an engineer for rework{canScrap ? ', or scrap it if it is beyond repair' : ''}.
         </div>
         <Select value={engId} onChange={e => setEngId(e.target.value)}>
           <option value="">Same engineer</option>
           {engineers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </Select>
-        <Input placeholder="Rework instructions" value={notes} onChange={e => setNotes(e.target.value)} />
+        <Input placeholder="Rework instructions / scrap reason" value={notes} onChange={e => setNotes(e.target.value)} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+          {canScrap && (
+            <Btn variant="danger" disabled={scrapMut.isPending || mut.isPending}
+              onClick={() => { if (window.confirm('Scrap this device? This cannot be undone.')) scrapMut.mutate() }}>
+              {scrapMut.isPending ? '…' : 'Scrap Device'}
+            </Btn>
+          )}
           <Btn onClick={() => mut.mutate()} disabled={mut.isPending}>
             {mut.isPending ? '…' : 'Return to Engineer'}
           </Btn>
@@ -306,13 +370,22 @@ export default function RefurbJobs() {
   const [filterStatus, setFilterStatus] = useState('')
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
+  const { user } = useAuth()
+  const perms = refurbPerms(user)
 
+  // Searching (IMEI, inventory # or job #) goes to the server and covers ALL jobs,
+  // including closed ones, so any device's refurb history can be traced.
+  const searchTerm = search.trim()
   const { data: jobs = [] } = useQuery<RefurbJob[]>({
-    queryKey: ['refurb-jobs', filterStatus],
+    queryKey: ['refurb-jobs', filterStatus, searchTerm],
     queryFn: () => {
-      const p: Record<string, string> = filterStatus ? { status: filterStatus } : { active_only: 'true' }
+      const p: Record<string, string> = {}
+      if (filterStatus) p.status = filterStatus
+      else if (!searchTerm) p.active_only = 'true'
+      if (searchTerm) p.search = searchTerm
       return getRefurbJobs(p).then(r => r.data)
     },
+    placeholderData: prev => prev,
   })
 
   const { data: engineers = [] } = useQuery<User[]>({
@@ -332,31 +405,21 @@ export default function RefurbJobs() {
 
   const engineerUsers = engineers
 
-  // Client-side search across the loaded jobs — works alongside the status filter
-  const visibleJobs = jobs.filter(job => {
-    if (!search.trim()) return true
-    const q = search.trim().toLowerCase()
-    const d = job.device
-    const haystack = [
-      job.job_number,
-      d?.imei,
-      d?.inventory_number,
-      d?.model?.brand,
-      d?.model?.model_name,
-    ].filter(Boolean).join(' ').toLowerCase()
-    return haystack.includes(q)
-  })
+  const visibleJobs = jobs
+
+  // Modals get the latest copy of the job so e.g. "Parts used" updates after adding parts
+  const liveJob = (job: RefurbJob) => jobs.find(j => j.id === job.id) ?? job
 
   return (
     <div>
       <PageHeader
         title="Refurb Jobs"
-        action={<Btn onClick={() => setModal({ type: 'new' })}>+ New Job</Btn>}
+        action={perms.createJob ? <Btn onClick={() => setModal({ type: 'new' })}>+ New Job</Btn> : undefined}
       />
 
       <Card style={{ marginBottom: 8, padding: '8px 16px', background: '#eff6ff', borderColor: '#93c5fd' }}>
         <span style={{ fontSize: 12, color: '#1e40af' }}>
-          Jobs are created automatically when a device is received as Awaiting Refurb. Only active jobs are shown by default.
+          Jobs are created automatically when a device is received as Awaiting Refurb. Only active jobs are shown by default — searching by IMEI, inventory # or job # also finds closed jobs. A device returns to Sellable Stock when it passes QC.
         </span>
       </Card>
 
@@ -383,7 +446,7 @@ export default function RefurbJobs() {
       </Card>
 
       <Card>
-        <Table headers={['Job #', 'Device', 'Engineer', 'Status', 'Opened', 'Parts', 'Actions']}>
+        <Table headers={['Job #', 'IMEI / Device', 'Engineer', 'Status', 'Opened', 'Parts', 'Actions']}>
           {visibleJobs.map(job => {
             const eng = engineers.find(u => u.id === job.assigned_engineer_id)
             return (
@@ -393,6 +456,7 @@ export default function RefurbJobs() {
                   {job.auto_created && (
                     <div style={{ fontSize: 10, color: '#94a3b8' }}>auto</div>
                   )}
+                  {job.customer_repair && <CustomerRepairTag />}
                 </TD>
                 <TD><DeviceCell job={job} /></TD>
                 <TD style={{ color: eng ? '#1e293b' : '#94a3b8' }}>{eng?.name ?? 'Unassigned'}</TD>
@@ -401,24 +465,24 @@ export default function RefurbJobs() {
                 <TD style={{ color: '#64748b', fontSize: 12 }}>{job.parts_used.length}</TD>
                 <TD>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {job.status === 'open' && (
+                    {job.status === 'open' && perms.assign && (
                       <Btn size="sm" onClick={() => setModal({ type: 'assign', job })}>
                         Assign Engineer
                       </Btn>
                     )}
-                    {job.status === 'in_progress' && (
+                    {job.status === 'in_progress' && (perms.addParts(job) || perms.complete(job)) && (
                       <Btn size="sm" onClick={() => setModal({ type: 'manage', job })}>
                         Manage / Parts
                       </Btn>
                     )}
-                    {job.status === 'awaiting_qc' && (
+                    {job.status === 'awaiting_qc' && perms.qc && (
                       <Btn size="sm" variant="ghost" onClick={() => setModal({ type: 'qc', job })}>
                         QC Check
                       </Btn>
                     )}
-                    {job.status === 'qc_failed' && (
+                    {job.status === 'qc_failed' && perms.qc && (
                       <Btn size="sm" variant="danger" onClick={() => setModal({ type: 'return', job })}>
-                        Return to Engineer
+                        Rework / Scrap
                       </Btn>
                     )}
                   </div>
@@ -448,13 +512,13 @@ export default function RefurbJobs() {
         <AssignEngineerModal job={modal.job} engineers={engineerUsers} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'manage' && (
-        <ManageJobModal job={modal.job} parts={parts} onClose={() => setModal(null)} />
+        <ManageJobModal job={liveJob(modal.job)} parts={parts} perms={perms} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'qc' && (
         <QCModal job={modal.job} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'return' && (
-        <ReturnToEngineerModal job={modal.job} engineers={engineerUsers} onClose={() => setModal(null)} />
+        <ReturnToEngineerModal job={modal.job} engineers={engineerUsers} canScrap={perms.scrapAfterQc} onClose={() => setModal(null)} />
       )}
     </div>
   )

@@ -117,6 +117,21 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 The `--build` flag rebuilds changed images. Database migrations run automatically.
 
+### One-off: repair refurb job data
+
+Older versions could leave refurb jobs out of step with their phones (open jobs
+for phones already sold, phones in refurb with no job, stuck "in progress" jobs).
+After updating, take a backup (section 8), then:
+
+```bash
+# Dry run — lists what would change, writes nothing
+docker compose -f docker-compose.prod.yml exec api python repair_refurb_jobs.py
+# Apply the changes
+docker compose -f docker-compose.prod.yml exec api python repair_refurb_jobs.py --apply
+```
+
+It is safe to run again; a second run reports 0 changes.
+
 ---
 
 ## 8. Backups

@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.refurb_job import JobStatus, JobOutcome
 from app.models.device import DeviceGrade
@@ -39,11 +39,11 @@ class ReturnToEngineerRequest(BaseModel):
 
 class RefurbJobPartAdd(BaseModel):
     part_id: str
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1)
 
 
 class AddPartsRequest(BaseModel):
-    parts: List[RefurbJobPartAdd]
+    parts: List[RefurbJobPartAdd] = Field(min_length=1)
 
 
 class CloseJobRequest(BaseModel):
@@ -97,7 +97,9 @@ class RefurbJobOut(BaseModel):
     id: str
     job_number: str
     device_id: str
-    # Human-readable device identification (device_id kept for compatibility)
+    # IMEI is the identifier shown to users; device_id is internal only.
+    device_imei: Optional[str] = None
+    device_inventory_number: Optional[str] = None
     device: Optional[DeviceForRefurb] = None
     assigned_engineer_id: Optional[str] = None
     status: JobStatus
@@ -109,6 +111,7 @@ class RefurbJobOut(BaseModel):
     external_cost: Decimal
     notes: Optional[str] = None
     auto_created: bool = False
+    customer_repair: bool = False
     created_at: datetime
     parts_used: List[RefurbJobPartOut] = []
 

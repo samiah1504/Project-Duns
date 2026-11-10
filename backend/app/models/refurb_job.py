@@ -3,7 +3,7 @@ import enum
 from datetime import datetime, date
 from decimal import Decimal
 
-from sqlalchemy import String, DateTime, Date, Numeric, Text, ForeignKey, Enum as SAEnum, Integer
+from sqlalchemy import String, DateTime, Date, Numeric, Text, ForeignKey, Enum as SAEnum, Integer, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -48,6 +48,9 @@ class RefurbJob(Base):
     external_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     auto_created: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # Customer's own phone (return resolved as repair & return): passing QC sends
+    # it back to the customer (device SOLD), never into sellable stock.
+    customer_repair: Mapped[bool] = mapped_column(default=False, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     device: Mapped["Device"] = relationship("Device", back_populates="refurb_jobs")
@@ -60,6 +63,18 @@ class RefurbJob(Base):
     parts_used: Mapped[list["RefurbJobPart"]] = relationship(
         "RefurbJobPart", back_populates="refurb_job", cascade="all, delete-orphan"
     )
+
+    # Flat, human-traceable device identifiers for API responses. Callers must
+    # eager-load `device` (all refurb job queries use selectinload).
+    @property
+    def device_imei(self) -> str | None:
+        d = self.__dict__.get("device")
+        return d.imei if d is not None else None
+
+    @property
+    def device_inventory_number(self) -> str | None:
+        d = self.__dict__.get("device")
+        return d.inventory_number if d is not None else None
 
 
 class RefurbJobPart(Base):

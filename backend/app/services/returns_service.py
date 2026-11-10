@@ -49,7 +49,10 @@ def _device_to_status_location(
         # Device was rejected — put back as SOLD (it's going back to the customer)
         return DeviceStatus.SOLD, DeviceLocation.SALES_STOCK
     if resolution == ReturnResolution.REPAIR_AND_RETURN:
-        return DeviceStatus.IN_REFURB, DeviceLocation.BENCH
+        # Customer's own phone: queued for an engineer like any refurb. Its job is
+        # flagged customer_repair, so passing QC returns it to the customer (SOLD)
+        # instead of putting it into sellable stock.
+        return DeviceStatus.AWAITING_REFURB, DeviceLocation.INTAKE
     if resolution in (ReturnResolution.REFUND, ReturnResolution.RESTOCK, ReturnResolution.REPLACE):
         if restock_outcome == RestockOutcome.SELLABLE:
             return DeviceStatus.SELLABLE, DeviceLocation.SALES_STOCK
@@ -141,6 +144,9 @@ async def create_return_batch(
             handled_by_user_id=user_id,
             notes=item_data.notes,
         )
+        # Add before applying a resolution: the refurb job sync reads this return
+        # to tell a customer's repair from stock
+        db.add(rma)
 
         # If resolution already provided at creation time, apply it immediately
         if item_data.resolution:
@@ -167,6 +173,9 @@ async def create_return_batch(
                     reference_id=rma_number,
                     notes=f"RMA resolved at intake: {item_data.resolution.value}",
                 )
+                # Devices sent back into refurb need a job to reach QC / stock again
+                from app.services.refurb import sync_job_after_transfer
+                await sync_job_after_transfer(db, device, user_id)
 
             # Refund adjustments
             if item_data.refund_amount and customer_id:
@@ -229,6 +238,8 @@ async def resolve_return_item(
         raise NotFoundError("Device not found")
 
     to_status, to_location = _device_to_status_location(resolution, restock_outcome)
+    # Set before syncing the refurb job, which reads it to flag customer repairs
+    rma.resolution = resolution
 
     old_status = device.status
     old_location = device.location
@@ -247,6 +258,9 @@ async def resolve_return_item(
             reference_id=rma.rma_number,
             notes=f"RMA resolved: {resolution.value}" + (f", outcome: {restock_outcome}" if restock_outcome else ""),
         )
+        # Devices sent back into refurb need a job to reach QC / stock again
+        from app.services.refurb import sync_job_after_transfer
+        await sync_job_after_transfer(db, device, user_id)
 
     rma.resolution = resolution
     rma.refund_amount = refund_amount
