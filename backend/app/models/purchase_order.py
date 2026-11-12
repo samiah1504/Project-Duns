@@ -65,12 +65,17 @@ class PurchaseOrder(Base):
     )
     received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stock owner (House or an investor). Set on receipt, never changes.
+    owner_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("stock_owners.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by_user_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
     )
 
     supplier: Mapped["Supplier"] = relationship("Supplier", back_populates="purchase_orders")
+    owner: Mapped["StockOwner | None"] = relationship("StockOwner")
     received_by_user: Mapped["User | None"] = relationship(
         "User", back_populates="purchase_orders_received", foreign_keys=[received_by_user_id]
     )

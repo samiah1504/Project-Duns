@@ -11,3 +11,4 @@ from app.models.sale_payment import SalePayment
 from app.models.return_rma import ReturnRMA, ReturnBatch
 from app.models.audit_log import AuditLog
 from app.models.expense import Expense
+from app.models.stock_owner import StockOwner, OwnerCharge

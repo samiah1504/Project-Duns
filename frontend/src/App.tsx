@@ -20,6 +20,7 @@ import Users from './pages/Users'
 import Suppliers from './pages/Suppliers'
 import PhoneModels from './pages/PhoneModels'
 import Settings from './pages/Settings'
+import StockOwners from './pages/StockOwners'
 import LabelDesigner from './pages/LabelDesigner'
 import SaleDetail from './pages/SaleDetail'
 import Expenses from './pages/Expenses'
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/suppliers" element={<ProtectedLayout><Suppliers /></ProtectedLayout>} />
             <Route path="/phone-models" element={<ProtectedLayout><PhoneModels /></ProtectedLayout>} />
             <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
+            <Route path="/stock-owners" element={<ProtectedLayout><StockOwners /></ProtectedLayout>} />
             <Route path="/label-designer" element={<ProtectedLayout><LabelDesigner /></ProtectedLayout>} />
             <Route path="/cost-price" element={<ProtectedLayout><CostPriceManagement /></ProtectedLayout>} />
             <Route path="/sellable" element={<ProtectedLayout><SellableStock /></ProtectedLayout>} />

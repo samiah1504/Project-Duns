@@ -4,6 +4,7 @@ import { getSellableDevices, getPhoneModels } from '../services/api'
 import { DeviceWithModel, PhoneModel } from '../types'
 import { PageHeader, Card, Table, TR, TD, Input, Select, fmt } from '../components/Layout'
 import { useAuth } from '../hooks/useAuth'
+import { OwnerFilter, OwnerTag } from '../hooks/useStockOwners'
 
 function daysSince(dateStr?: string): number {
   if (!dateStr) return 0
@@ -35,6 +36,7 @@ export default function SellableStock() {
   const [search, setSearch] = useState('')
   const [filterModel, setFilterModel] = useState('')
   const [filterGrade, setFilterGrade] = useState('')
+  const [filterOwner, setFilterOwner] = useState('')
 
   const { data: devices = [], isLoading } = useQuery<DeviceWithModel[]>({
     queryKey: ['sellable-devices'],
@@ -59,6 +61,7 @@ export default function SellableStock() {
     if (search && !spec.includes(search.toLowerCase())) return false
     if (filterModel && d.model_id !== filterModel) return false
     if (filterGrade && d.grade !== filterGrade) return false
+    if (filterOwner && d.owner_id !== filterOwner) return false
     return true
   })
 
@@ -89,6 +92,7 @@ export default function SellableStock() {
             <option value="B">Grade B</option>
             <option value="C">Grade C</option>
           </Select>
+          <OwnerFilter value={filterOwner} onChange={setFilterOwner} />
           <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>
             {filtered.length} device{filtered.length !== 1 ? 's' : ''}
           </span>
@@ -102,7 +106,7 @@ export default function SellableStock() {
           <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No sellable devices found.</div>
         ) : (
           <Table headers={[
-            'Inventory #', 'IMEI', 'Model', 'Grade', 'Status',
+            'Inventory #', 'IMEI', 'Owner', 'Model', 'Grade', 'Status',
             'Selling Price', ...(canSeeCost ? ['Cost Price'] : []),
             'Days in Stock', 'Location',
           ]}>
@@ -110,6 +114,7 @@ export default function SellableStock() {
               <TR key={d.id}>
                 <TD style={{ fontFamily: 'monospace', fontSize: 12 }}>{d.inventory_number ?? '—'}</TD>
                 <TD style={{ fontFamily: 'monospace', fontSize: 12 }}>{d.imei}</TD>
+                <TD><OwnerTag ownerId={d.owner_id} /></TD>
                 <TD>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>
                     {d.model?.brand} {d.model?.model_name}

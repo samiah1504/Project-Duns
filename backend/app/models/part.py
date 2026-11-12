@@ -3,7 +3,7 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import String, DateTime, Integer, Numeric, Text, Enum as SAEnum
+from sqlalchemy import String, DateTime, Integer, Numeric, Text, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -32,7 +32,8 @@ class Part(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[PartType] = mapped_column(SAEnum(PartType, create_constraint=False, native_enum=False), nullable=False)
-    sku: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
+    # SKU is unique per owner (each owner keeps their own stock of the same part)
+    sku: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     quantity_on_hand: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     # Customer-facing price for external sales (Parts & Accessories).
@@ -44,7 +45,13 @@ class Part(Base):
         SAEnum(PartSource, create_constraint=False, native_enum=False), default=PartSource.IMPORTED, nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stock owner (House or an investor). Set on receipt, never changes.
+    owner_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("stock_owners.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    owner: Mapped["StockOwner | None"] = relationship("StockOwner")
 
     refurb_job_parts: Mapped[list["RefurbJobPart"]] = relationship(
         "RefurbJobPart", back_populates="part"

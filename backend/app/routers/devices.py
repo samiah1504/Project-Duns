@@ -26,6 +26,7 @@ from app.models.audit_log import ReferenceType
 from app.models.user import User
 from decimal import Decimal
 
+from app.models.stock_owner import resolve_owner_id
 router = APIRouter()
 
 
@@ -35,10 +36,13 @@ async def list_devices(
     location: Optional[DeviceLocation] = None,
     model_id: Optional[str] = None,
     imei: Optional[str] = None,
+    owner_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(any_authenticated()),
 ):
     q = select(Device).options(selectinload(Device.model))
+    if owner_id:
+        q = q.where(Device.owner_id == owner_id)
     # SALES role sees only sellable stock (backend enforcement)
     if current_user.role == UserRole.SALES and not status:
         q = q.where(Device.status == DeviceStatus.SELLABLE)
@@ -88,6 +92,7 @@ async def dashboard_counts(
 async def list_sellable_devices(
     model_id: Optional[str] = None,
     imei: Optional[str] = None,
+    owner_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(any_authenticated()),
 ):
@@ -100,6 +105,8 @@ async def list_sellable_devices(
         q = q.where(Device.model_id == model_id)
     if imei:
         q = q.where(Device.imei.ilike(f"%{imei}%"))
+    if owner_id:
+        q = q.where(Device.owner_id == owner_id)
     result = await db.execute(q.order_by(Device.model_id))
     devices = result.scalars().all()
     return [device_to_out(d, current_user.role.value) for d in devices]
@@ -129,7 +136,9 @@ async def create_device(
     if existing.scalar_one_or_none():
         raise ConflictError(f"IMEI {body.imei} already exists")
     inv_num = await generate_inventory_number(db)
-    device = Device(**body.model_dump(), inventory_number=inv_num)
+    data = body.model_dump()
+    data["owner_id"] = await resolve_owner_id(db, data.get("owner_id"))
+    device = Device(**data, inventory_number=inv_num)
     db.add(device)
     await db.flush()
     await write_audit(

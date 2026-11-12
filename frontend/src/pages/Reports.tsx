@@ -7,7 +7,7 @@ import {
   getRefurbReport, getReturnsDetailReport, getOperationsSummary,
   getMySales, getMyRefurb,
   getReconciliation, getLowStockAlerts,
-  getExpenses, getExpensesSummary,
+  getExpenses, getExpensesSummary, getOwnerStatement,
 } from '../services/api'
 
 // ── Utilities ────────────────────────────────────────────────────────────────
@@ -663,6 +663,144 @@ function MyRefurbTab() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+// ─── Stock Owners (House + investors) ────────────────────────────────────────
+
+type OwnerRow = Record<string, string | number | boolean | null> & { owner: string; owner_id?: string }
+
+const OWNER_SECTIONS: { title: string; note?: string; rows: [string, string, 'money' | 'count'][] }[] = [
+  { title: 'Stock on hand (now)', note: 'Valued at cost. Not affected by the date range.', rows: [
+    ['Phones sellable / reserved', 'phones_sellable', 'count'],
+    ['  value', 'phones_sellable_value', 'money'],
+    ['Phones in refurb / QC / external', 'phones_in_refurb', 'count'],
+    ['  value', 'phones_in_refurb_value', 'money'],
+    ['Phones returned / to return', 'phones_other', 'count'],
+    ['  value', 'phones_other_value', 'money'],
+    ['Parts units', 'parts_units', 'count'],
+    ['  value', 'parts_value', 'money'],
+    ['Total stock value', 'stock_value', 'money'],
+  ]},
+  { title: 'Sales & profit (selected period)', rows: [
+    ['Phones sold', 'phones_sold', 'count'],
+    ['Phone sales (after discount)', 'phone_revenue', 'money'],
+    ['Cost of phones sold', 'phone_cost', 'money'],
+    ['Parts sold to customers', 'parts_sold', 'count'],
+    ['Parts sales (after discount)', 'parts_revenue', 'money'],
+    ['Cost of parts sold', 'parts_cost', 'money'],
+    ['Delivery fees & tax (House)', 'delivery_and_tax', 'money'],
+    ['Revenue', 'revenue', 'money'],
+    ['Cost of sales', 'cost_of_sales', 'money'],
+    ['Gross profit', 'gross_profit', 'money'],
+    ['Refunds', 'refunds', 'money'],
+    ['Expenses (House pays all)', 'expenses', 'money'],
+    ['Net profit', 'net_profit', 'money'],
+  ]},
+  { title: 'Between owners (selected period)', note: 'Parts taken from another owner\'s stock for a phone. The cost is already in the phone\'s cost above; this is only what owners owe each other.', rows: [
+    ['Owes other owners (parts used)', 'owes_other_owners', 'money'],
+    ['Owed by other owners (parts supplied)', 'owed_by_other_owners', 'money'],
+    ['Net (+ owed to this owner)', 'settlement_net', 'money'],
+  ]},
+]
+const BOLD_KEYS = new Set(['stock_value', 'revenue', 'gross_profit', 'net_profit', 'settlement_net'])
+
+function OwnerStatementTab() {
+  const [from, setFrom] = useState(''); const [to, setTo] = useState('')
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-statement', from, to],
+    queryFn: () => getOwnerStatement(p({ date_from: from, date_to: to })).then(r => r.data),
+  })
+  const cols: OwnerRow[] = data ? [...data.owners, { ...data.total, owner: 'All owners (total)' }] : []
+  const cell = (r: OwnerRow, key: string, kind: 'money' | 'count') =>
+    kind === 'money' ? fmt(String(r[key] ?? '0')) : String(r[key] ?? 0)
+  const period = from || to ? `${from || 'start'} to ${to || 'today'}` : 'all time'
+
+  const csv = () => {
+    if (!data) return
+    const rows: (string | number)[][] = []
+    OWNER_SECTIONS.forEach(sec => {
+      rows.push([sec.title, ...cols.map(() => '')])
+      sec.rows.forEach(([label, key]) => rows.push([label.trim(), ...cols.map(c => String(c[key] ?? ''))]))
+    })
+    downloadCSV('stock-owners.csv', ['', ...cols.map(c => c.owner)], rows)
+  }
+  const print = () => {
+    if (!data) return
+    const head = `<tr><th></th>${cols.map(c => `<th>${c.owner}</th>`).join('')}</tr>`
+    const body = OWNER_SECTIONS.map(sec =>
+      `<tr><td colspan="${cols.length + 1}" style="font-weight:700;background:#f1f5f9">${sec.title}</td></tr>` +
+      sec.rows.map(([label, key, kind]) =>
+        `<tr><td>${label}</td>${cols.map(c => `<td>${cell(c, key, kind)}</td>`).join('')}</tr>`).join('')
+    ).join('')
+    printSection(`Stock Owners — ${period}`, `<table><thead>${head}</thead><tbody>${body}</tbody></table>`)
+  }
+
+  return (
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:10}}>
+        <DateFilter from={from} to={to} onChange={(f,t)=>{setFrom(f);setTo(t)}} />
+        <ExportBar onCSV={csv} onPrint={print} />
+      </div>
+      {isLoading ? <div style={{color:'#94a3b8'}}>Loading…</div> : data && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748b', fontSize: 12 }}>{period}</th>
+                    {cols.map((c, i) => (
+                      <th key={i} style={{ textAlign: 'right', padding: '8px 12px', fontSize: 13, whiteSpace: 'nowrap',
+                        color: i === cols.length - 1 ? '#1e3a8a' : '#1e293b', fontWeight: 800 }}>{c.owner}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {OWNER_SECTIONS.map(sec => [
+                    <tr key={sec.title} style={{ background: '#f1f5f9' }}>
+                      <td colSpan={cols.length + 1} style={{ padding: '7px 12px', fontWeight: 700, color: '#334155' }}>
+                        {sec.title}
+                        {sec.note && <span style={{ fontWeight: 400, color: '#64748b', fontSize: 12 }}> — {sec.note}</span>}
+                      </td>
+                    </tr>,
+                    ...sec.rows.map(([label, key, kind]) => (
+                      <tr key={sec.title + key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '5px 12px', paddingLeft: label.startsWith('  ') ? 28 : 12,
+                          color: label.startsWith('  ') ? '#64748b' : '#1e293b', fontWeight: BOLD_KEYS.has(key) ? 700 : 400 }}>
+                          {label.trim()}
+                        </td>
+                        {cols.map((c, i) => {
+                          const v = parseFloat(String(c[key] ?? '0'))
+                          return (
+                            <td key={i} style={{ padding: '5px 12px', textAlign: 'right', whiteSpace: 'nowrap',
+                              fontWeight: BOLD_KEYS.has(key) ? 700 : 400,
+                              color: key === 'net_profit' || key === 'settlement_net' ? (v < 0 ? '#dc2626' : '#16a34a') : '#1e293b',
+                              background: i === cols.length - 1 ? '#eff6ff' : undefined }}>
+                              {cell(c, key, kind)}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )),
+                  ])}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:16}}>
+            <Card><SH title="Who owes whom (net)" />
+              <SimpleTable headers={['Owes', 'To', 'Amount']}
+                rows={data.balances.map((b: any) => [b.from, b.to, fmt(b.amount)])} />
+            </Card>
+            <Card><SH title="Parts used across owners" />
+              <SimpleTable headers={['Date', 'Phone IMEI', 'Part', 'Qty', 'From stock of', 'Charged to', 'Amount']}
+                rows={data.charges.map((c: any) => [c.date, c.imei, c.part, c.quantity, c.payee, c.payer, fmt(c.amount)])} />
+            </Card>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const TABS = [
   { key:'operations', label:'Operations Summary', roles:['ADMIN','RECORDS'] },
   { key:'inventory',  label:'Inventory',          roles:['ADMIN','INVENTORY'] },
@@ -672,6 +810,7 @@ const TABS = [
   { key:'expenses',   label:'Expenses',            roles:['ADMIN','RECORDS'] },
   { key:'returns',    label:'Returns',             roles:['ADMIN','RECORDS'] },
   { key:'reconciliation', label:'Reconciliation', roles:['ADMIN','INVENTORY'] },
+  { key:'owners',     label:'Stock Owners',        roles:['ADMIN','OPERATIONS','RECORDS'] },
   { key:'my_sales',   label:'My Sales',            roles:['SALES'] },
   { key:'my_refurb',  label:'My Refurb Jobs',      roles:['ENGINEER'] },
 ]
@@ -710,6 +849,7 @@ export default function Reports() {
         {current==='expenses'       && <ExpensesTab />}
         {current==='returns'        && <ReturnsTab />}
         {current==='reconciliation' && <ReconciliationTab />}
+        {current==='owners'         && <OwnerStatementTab />}
         {current==='my_sales'       && <MySalesTab />}
         {current==='my_refurb'      && <MyRefurbTab />}
       </div>

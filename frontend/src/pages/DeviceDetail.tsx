@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getDevice, getDeviceHistory } from '../services/api'
 import { Card, statusBadge, fmt } from '../components/Layout'
 import { AuditLog } from '../types'
+import { OwnerTag } from '../hooks/useStockOwners'
 
 export default function DeviceDetail() {
   const { imei } = useParams<{ imei: string }>()
@@ -27,6 +28,7 @@ export default function DeviceDetail() {
         <h1 style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace' }}>{device.imei}</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6 }}>
           {statusBadge(device.status)}
+          <OwnerTag ownerId={device.owner_id} />
           <span style={{ color: '#64748b', fontSize: 14 }}>{device.location.replace(/_/g, ' ')}</span>
           <span style={{ fontWeight: 700, color: device.grade === 'A' ? '#22c55e' : device.grade === 'B' ? '#f59e0b' : '#ef4444' }}>
             Grade {device.grade}

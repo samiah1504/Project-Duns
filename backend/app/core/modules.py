@@ -23,6 +23,7 @@ ALL_MODULES = [
     "users",
     "cost_price",
     "settings",
+    "stock_owners",
 ]
 
 MODULE_LABELS = {
@@ -45,6 +46,7 @@ MODULE_LABELS = {
     "users": "User Management",
     "cost_price": "Cost Price Management",
     "settings": "Settings",
+    "stock_owners": "Stock Owners",
 }
 
 ROLE_DEFAULTS: dict[str, list[str]] = {
@@ -52,7 +54,7 @@ ROLE_DEFAULTS: dict[str, list[str]] = {
     "OPERATIONS": [
         "dashboard", "all_devices", "sellable_stock", "stock_to_return", "harvested_stock",
         "intake", "parts", "phone_models", "suppliers", "reports", "expenses", "cost_price",
-        "customers", "returns",
+        "customers", "returns", "stock_owners",
     ],
     "INVENTORY": [
         "dashboard", "all_devices", "sellable_stock", "stock_to_return", "harvested_stock",

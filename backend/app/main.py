@@ -43,6 +43,7 @@ import app.models.label_template  # noqa: F401 — registers LabelTemplate with 
 import app.models.price_change    # noqa: F401 — registers PriceChange with Base.metadata
 import app.models.purchase_order  # noqa: F401 — registers POReceivedDevice with Base.metadata
 import app.models.app_setting     # noqa: F401 — registers AppSetting with Base.metadata
+import app.models.stock_owner     # noqa: F401 — registers StockOwner / OwnerCharge
 
 
 @asynccontextmanager
@@ -410,6 +411,31 @@ async def lifespan(app: FastAPI):
                );
                EXCEPTION WHEN OTHERS THEN NULL;
                END $$""",
+            # ── Stock owners (House + investors) ──────────────────────────────
+            "INSERT INTO stock_owners (id, name, is_house, active, created_at) "
+            "SELECT gen_random_uuid(), 'House', TRUE, TRUE, NOW() "
+            "WHERE NOT EXISTS (SELECT 1 FROM stock_owners WHERE is_house)",
+            "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES stock_owners(id)",
+            "ALTER TABLE devices ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES stock_owners(id)",
+            "ALTER TABLE parts ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES stock_owners(id)",
+            "ALTER TABLE sale_line_items ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES stock_owners(id)",
+            # Everything that existed before stock owners belongs to the House
+            "UPDATE purchase_orders SET owner_id = (SELECT id FROM stock_owners WHERE is_house ORDER BY created_at LIMIT 1) WHERE owner_id IS NULL",
+            "UPDATE devices SET owner_id = (SELECT id FROM stock_owners WHERE is_house ORDER BY created_at LIMIT 1) WHERE owner_id IS NULL",
+            "UPDATE parts SET owner_id = (SELECT id FROM stock_owners WHERE is_house ORDER BY created_at LIMIT 1) WHERE owner_id IS NULL",
+            """UPDATE sale_line_items sli SET owner_id = COALESCE(
+                 (SELECT d.owner_id FROM devices d WHERE d.id = sli.device_id),
+                 (SELECT p.owner_id FROM parts p WHERE p.id = sli.part_id),
+                 (SELECT id FROM stock_owners WHERE is_house ORDER BY created_at LIMIT 1))
+               WHERE sli.owner_id IS NULL""",
+            "CREATE INDEX IF NOT EXISTS ix_devices_owner_id ON devices (owner_id)",
+            "CREATE INDEX IF NOT EXISTS ix_parts_owner_id ON parts (owner_id)",
+            "CREATE INDEX IF NOT EXISTS ix_purchase_orders_owner_id ON purchase_orders (owner_id)",
+            "CREATE INDEX IF NOT EXISTS ix_sale_line_items_owner_id ON sale_line_items (owner_id)",
+            # Part SKU: unique per owner instead of globally
+            "DROP INDEX IF EXISTS ix_parts_sku",
+            "CREATE INDEX IF NOT EXISTS ix_parts_sku_plain ON parts (sku)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_parts_sku_owner ON parts (sku, owner_id) WHERE sku IS NOT NULL",
     ]
     for stmt in _migrations:
         try:
@@ -454,7 +480,7 @@ app.add_middleware(
 from app.routers import (
     auth, devices, parts, purchase_orders,
     refurb_jobs, sales, customers, suppliers, users, returns, reports, phone_models, expenses,
-    label_templates, settings as settings_router,
+    label_templates, settings as settings_router, stock_owners,
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -472,6 +498,7 @@ app.include_router(phone_models.router, prefix="/api/phone-models", tags=["phone
 app.include_router(expenses.router, prefix="/api/expenses", tags=["expenses"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(label_templates.router, prefix="/api/label-templates", tags=["label-templates"])
+app.include_router(stock_owners.router, prefix="/api/stock-owners", tags=["stock-owners"])
 
 
 @app.get("/api/health")

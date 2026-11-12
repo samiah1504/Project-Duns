@@ -20,6 +20,7 @@ class PartCreate(BaseModel):
     min_stock_level: int = 0
     source: PartSource = PartSource.IMPORTED
     notes: Optional[str] = None
+    owner_id: Optional[str] = None  # stock owner; defaults to House
 
 
 class PartUpdate(BaseModel):
@@ -51,6 +52,7 @@ class PartOut(BaseModel):
     min_stock_level: int
     source: PartSource
     notes: Optional[str] = None
+    owner_id: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -75,5 +77,6 @@ def part_to_out(part, viewer_role: str) -> dict:
         "min_stock_level": part.min_stock_level,
         "source": part.source,
         "notes": part.notes,
+        "owner_id": part.owner_id,
         "created_at": part.created_at,
     }

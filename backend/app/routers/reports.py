@@ -225,3 +225,15 @@ async def ceo_dashboard(
     except Exception as exc:
         _log.error("CEO dashboard failed: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Dashboard failed: {exc}")
+
+
+@router.get("/owner-statement")
+async def owner_statement(
+    date_from: Optional[date_type] = Query(None),
+    date_to: Optional[date_type] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(records_or_admin()),
+):
+    """Stock and accounts per stock owner (House + investors) and in total."""
+    from app.services.owner_report import get_owner_statement
+    return await get_owner_statement(db, date_from, date_to)

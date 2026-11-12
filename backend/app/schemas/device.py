@@ -20,6 +20,7 @@ class DeviceCreate(BaseModel):
     supplier_id: Optional[str] = None
     date_received: Optional[date] = None
     notes: Optional[str] = None
+    owner_id: Optional[str] = None  # stock owner; defaults to House
 
 
 class DeviceUpdate(BaseModel):
@@ -72,6 +73,7 @@ class DeviceOut(BaseModel):
     selling_price_status: Optional[str] = None  # 'set' | 'required'
     purchase_order_id: Optional[str] = None
     supplier_id: Optional[str] = None
+    owner_id: Optional[str] = None
     date_received: Optional[date] = None
     sale_id: Optional[str] = None
     sale_price: Optional[Decimal] = None
@@ -125,6 +127,7 @@ def device_to_out(device, viewer_role: str) -> dict:
         "selling_price_status": "set" if device.selling_price is not None else "required",
         "purchase_order_id": device.purchase_order_id,
         "supplier_id": device.supplier_id,
+        "owner_id": device.owner_id,
         "date_received": device.date_received,
         "sale_id": device.sale_id,
         "sale_price": device.sale_price,

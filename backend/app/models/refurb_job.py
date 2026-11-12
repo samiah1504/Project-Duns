@@ -72,6 +72,11 @@ class RefurbJob(Base):
         return d.imei if d is not None else None
 
     @property
+    def device_owner_id(self) -> str | None:
+        d = self.__dict__.get("device")
+        return d.owner_id if d is not None else None
+
+    @property
     def device_inventory_number(self) -> str | None:
         d = self.__dict__.get("device")
         return d.inventory_number if d is not None else None

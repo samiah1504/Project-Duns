@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from pydantic import BaseModel
@@ -21,6 +21,7 @@ from app.schemas.purchase_order import (
 )
 from app.core.permissions import inventory_or_admin, admin_or_operations, any_authenticated
 from app.core.exceptions import NotFoundError, BadRequestError
+from app.models.stock_owner import resolve_owner_id
 import logging
 logger = logging.getLogger("tardmart")
 from app.services.intake import (
@@ -71,7 +72,7 @@ def _po_to_out(po: PurchaseOrder) -> dict:
             "received_devices": rd_out,
         })
     return {
-        "id": po.id, "po_number": po.po_number, "supplier_id": po.supplier_id,
+        "id": po.id, "po_number": po.po_number, "supplier_id": po.supplier_id, "owner_id": po.owner_id,
         "date": po.date, "shipping_cost": po.shipping_cost,
         "status": po.status.value if hasattr(po.status, "value") else po.status,
         "status_label": PO_STATUS_LABELS.get(
@@ -90,10 +91,13 @@ def _po_to_out(po: PurchaseOrder) -> dict:
 @router.get("", response_model=list[PurchaseOrderOut])
 async def list_pos(
     status: Optional[str] = None,
+    owner_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
     q = select(PurchaseOrder).options(*_po_load_options())
+    if owner_id:
+        q = q.where(PurchaseOrder.owner_id == owner_id)
     if status:
         # Handle legacy "open" → "ordered" and "received" → "fully_received" for filter
         status_map = {"open": ["open", "ordered"], "received": ["received", "fully_received"]}
@@ -119,6 +123,7 @@ async def create_po(
             notes=body.notes,
             order_date=body.date,
             user_id=current_user.id,
+            owner_id=body.owner_id,
         )
         await db.commit()
         result = await db.execute(
@@ -144,6 +149,7 @@ async def simple_receive_po(
         shipping_cost=body.shipping_cost,
         notes=body.notes,
         user_id=current_user.id,
+        owner_id=body.owner_id,
     )
     await db.commit()
     result = await db.execute(
@@ -226,7 +232,17 @@ async def update_po(
         raise NotFoundError("Purchase order not found")
     if po.status in (POStatus.CANCELLED,):
         raise BadRequestError("Cannot edit a cancelled PO")
-    for field, value in body.model_dump(exclude_none=True).items():
+    updates = body.model_dump(exclude_none=True)
+    if "owner_id" in updates and updates["owner_id"] != po.owner_id:
+        # The owner can be corrected only before anything is received; after
+        # that, phones and parts belong to the owner for good.
+        received = (await db.execute(
+            select(func.coalesce(func.sum(POLineItem.received_qty), 0)).where(POLineItem.po_id == po.id)
+        )).scalar()
+        if received:
+            raise BadRequestError("Stock owner can't be changed after items have been received on this PO")
+        updates["owner_id"] = await resolve_owner_id(db, updates["owner_id"])
+    for field, value in updates.items():
         setattr(po, field, value)
     await db.commit()
     result = await db.execute(

@@ -31,9 +31,19 @@ export type DeviceStatus =
 export type DeviceGrade = 'A' | 'B' | 'C'
 export type DeviceLocation = 'INTAKE' | 'BENCH' | 'SALES_STOCK' | 'EXTERNAL' | 'SCRAP' | 'QC'
 
+export interface StockOwner {
+  id: string
+  name: string
+  is_house: boolean
+  active: boolean
+  notes?: string | null
+  created_at: string
+}
+
 export interface Device {
   id: string
   imei: string
+  owner_id?: string | null      // stock owner (House or investor) — never changes
   inventory_number?: string
   model_id: string
   model?: { id: string; brand: string; model_name: string; ram?: string; storage?: string; colour?: string } | null
@@ -86,6 +96,7 @@ export interface PhoneModel {
 
 export interface Part {
   id: string
+  owner_id?: string | null      // stock owner — each owner keeps separate parts stock
   name: string
   type: string
   sku?: string
@@ -174,6 +185,7 @@ export interface PurchaseOrder {
   id: string
   po_number: string
   supplier_id: string
+  owner_id?: string | null
   date: string
   shipping_cost: string
   status: POStatus
@@ -237,6 +249,7 @@ export interface Sale {
 export interface SaleLineItem {
   id: string
   sale_id: string
+  owner_id?: string | null
   device_id?: string
   part_id?: string
   quantity: number
@@ -295,6 +308,7 @@ export interface RefurbJob {
   device_id: string            // internal only — never display; use the IMEI
   device_imei?: string | null
   device_inventory_number?: string | null
+  device_owner_id?: string | null
   device?: {
     imei: string
     inventory_number?: string | null

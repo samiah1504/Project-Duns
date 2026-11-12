@@ -182,6 +182,12 @@ export const getOperationsSummary = (params?: Record<string, string>) => api.get
 export const getMySales = (params?: Record<string, string>) => api.get('/reports/my-sales', { params })
 export const getMyRefurb = (params?: Record<string, string>) => api.get('/reports/my-refurb', { params })
 export const getCeoDashboard = (params?: Record<string, string>) => api.get('/reports/ceo-dashboard', { params })
+export const getOwnerStatement = (params?: Record<string, string>) => api.get('/reports/owner-statement', { params })
+
+// Stock owners (House + investors)
+export const getStockOwners = (params?: Record<string, string>) => api.get('/stock-owners', { params })
+export const createStockOwner = (data: unknown) => api.post('/stock-owners', data)
+export const updateStockOwner = (id: string, data: unknown) => api.patch(`/stock-owners/${id}`, data)
 
 // Company Settings (server-side, shared across all devices)
 export const getCompanySettingsAPI = () => api.get('/settings/company')

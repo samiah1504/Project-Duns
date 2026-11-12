@@ -47,6 +47,7 @@ class SaleLineItemOut(BaseModel):
     unit_price: Decimal
     line_total: Decimal
     notes: Optional[str] = None
+    owner_id: Optional[str] = None
     device: Optional[DeviceForSaleItem] = None
     # Part/accessory info for part lines. Deliberately excludes unit_cost —
     # cost stays confidential; COGS is computed server-side in reports only.

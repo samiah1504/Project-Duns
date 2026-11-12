@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { getParts, createPart, updatePart, adjustPartStock } from '../services/api'
+import { OwnerFilter, OwnerSelect, OwnerTag } from '../hooks/useStockOwners'
 import { Part } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select, fmt } from '../components/Layout'
 import { useAuth } from '../hooks/useAuth'
@@ -34,11 +35,15 @@ export default function Parts() {
   const [sellPrice, setSellPrice] = useState('')
   const [minStock, setMinStock] = useState('0')
   const [source, setSource] = useState('imported')
+  const [ownerId, setOwnerId] = useState('')
+  const [filterOwner, setFilterOwner] = useState('')
 
-  const { data: parts = [] } = useQuery({
+  const { data: allParts = [] } = useQuery({
     queryKey: ['parts'],
     queryFn: () => getParts().then(r => r.data),
   })
+  // Each owner keeps separate parts stock; summary and table follow the owner filter
+  const parts = (allParts as Part[]).filter(p => !filterOwner || p.owner_id === filterOwner)
 
   const createMut = useMutation({
     mutationFn: (data: unknown) => createPart(data),
@@ -74,7 +79,8 @@ export default function Parts() {
       />
 
       {/* Summary strip */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+        <OwnerFilter value={filterOwner} onChange={setFilterOwner} />
         <SummaryBox label="Items" value={String((parts as Part[]).length)} />
         <SummaryBox label="Units in Stock" value={String(totalUnits)} />
         {canSeeCost && (
@@ -85,7 +91,7 @@ export default function Parts() {
 
       <Card>
         <Table headers={[
-          'Name', 'Type', 'SKU', 'In Stock', 'Min Level', 'Selling Price',
+          'Name', 'Owner', 'Type', 'SKU', 'In Stock', 'Min Level', 'Selling Price',
           ...(canSeeCost ? ['Unit Cost', 'Stock Value'] : []),
           'Source', 'Actions',
         ]}>
@@ -97,6 +103,7 @@ export default function Parts() {
                   <strong>{p.name}</strong>
                   {low && <span style={{ marginLeft: 8, fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>LOW</span>}
                 </TD>
+                <TD><OwnerTag ownerId={p.owner_id} /></TD>
                 <TD style={{ textTransform: 'capitalize', color: '#64748b' }}>{p.type.replace(/_/g, ' ')}</TD>
                 <TD style={{ color: '#94a3b8', fontSize: 12 }}>{p.sku ?? '—'}</TD>
                 <TD style={{ fontWeight: 700, color: low ? '#ef4444' : '#22c55e' }}>{p.quantity_on_hand}</TD>
@@ -150,9 +157,11 @@ export default function Parts() {
             selling_price: sellPrice ? parseFloat(sellPrice) : undefined,
             min_stock_level: parseInt(minStock) || 0,
             source,
+            owner_id: ownerId || undefined,
           })
         }}>
           <Input label="Name" value={name} onChange={e => setName(e.target.value)} required />
+          <OwnerSelect value={ownerId} onChange={setOwnerId} label="Stock owner (who paid for this stock)" />
           <Select label="Type" value={type} onChange={e => setType(e.target.value)}>
             {PART_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
           </Select>

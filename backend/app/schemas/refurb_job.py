@@ -100,6 +100,7 @@ class RefurbJobOut(BaseModel):
     # IMEI is the identifier shown to users; device_id is internal only.
     device_imei: Optional[str] = None
     device_inventory_number: Optional[str] = None
+    device_owner_id: Optional[str] = None
     device: Optional[DeviceForRefurb] = None
     assigned_engineer_id: Optional[str] = None
     status: JobStatus

@@ -13,6 +13,7 @@ from app.models.audit_log import ReferenceType
 from app.services.audit import write_audit
 from app.services.device_state_machine import validate_transition
 from app.core.exceptions import BadRequestError, NotFoundError
+from app.models.stock_owner import get_house_owner_id
 
 
 async def generate_invoice_number(db: AsyncSession) -> str:
@@ -129,8 +130,10 @@ async def create_sale(
     db.add(sale)
     await db.flush()
 
+    house_id = await get_house_owner_id(db)
     for item_data in line_items_data:
         line_total = item_data.unit_price * item_data.quantity
+        line_owner_id = house_id
 
         if item_data.device_id:
             dev_result = await db.execute(
@@ -151,6 +154,7 @@ async def create_sale(
             validate_transition(DeviceStatus.SELLABLE, DeviceStatus.RESERVED, DeviceLocation.SALES_STOCK)
             device.status = DeviceStatus.RESERVED
             device.sale_id = sale.id
+            line_owner_id = device.owner_id or house_id
             device.sale_price = item_data.unit_price
 
             await write_audit(
@@ -178,6 +182,7 @@ async def create_sale(
                     f"available {part.quantity_on_hand}, requested {item_data.quantity}"
                 )
             part.quantity_on_hand -= item_data.quantity
+            line_owner_id = part.owner_id or house_id
             # COGS snapshot: cost at the moment of sale (external sale path —
             # never mixed with internal refurb consumption).
             part_cost_snapshot = part.unit_cost or Decimal("0.00")
@@ -202,6 +207,7 @@ async def create_sale(
             line_total=line_total,
             unit_cost_at_sale=part_cost_snapshot,
             notes=item_data.notes,
+            owner_id=line_owner_id,
         )
         db.add(line)
         subtotal += line_total
