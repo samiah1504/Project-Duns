@@ -244,6 +244,8 @@ export interface Sale {
   customer?: { id: string; name: string; contact?: Record<string, string> }
   line_items: SaleLineItem[]
   payments?: SalePayment[]
+  // Present when the invoice mixes stock owners' goods: each owner's share
+  owner_split?: { owner_id: string; owner: string; total: string; paid: string; balance: string }[]
 }
 
 export interface SaleLineItem {

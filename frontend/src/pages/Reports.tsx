@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, createContext, useContext } from 'react'
+import { useStockOwners, OwnerFilter } from '../hooks/useStockOwners'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
 import { Card, fmt } from '../components/Layout'
@@ -115,11 +116,15 @@ function p(params: Record<string, string | undefined>) {
 
 // ── Report tabs ───────────────────────────────────────────────────────────────
 
+// Selected stock owner for every report tab ('' = all owners combined)
+const ReportOwner = createContext('')
+
 function OperationsSummaryTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const { data, isLoading } = useQuery({
-    queryKey: ['ops-summary', from, to],
-    queryFn: () => getOperationsSummary(p({ date_from: from, date_to: to })).then(r => r.data),
+    queryKey: ['ops-summary', owner, from, to],
+    queryFn: () => getOperationsSummary(p({ owner_id: owner, date_from: from, date_to: to })).then(r => r.data),
   })
   const handleCSV = () => { if (!data) return; downloadCSV('operations-summary.csv', ['Category', 'Item', 'Value'], [
     ['Money In','Total Sales', data.money_in.total_sales], ['Money In','Payments Received', data.money_in.total_payments_received],
@@ -206,11 +211,12 @@ function OperationsSummaryTab() {
 }
 
 function InventoryTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const [status, setStatus] = useState(''); const [grade, setGrade] = useState('')
   const { data, isLoading } = useQuery({
-    queryKey: ['inv-report', from, to, status, grade],
-    queryFn: () => getInventoryReport(p({ date_from: from, date_to: to, status: status || undefined, grade: grade || undefined })).then(r => r.data),
+    queryKey: ['inv-report', owner, from, to, status, grade],
+    queryFn: () => getInventoryReport(p({ owner_id: owner, date_from: from, date_to: to, status: status || undefined, grade: grade || undefined })).then(r => r.data),
   })
   const sel: React.CSSProperties = { padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:6, fontSize:13, background:'#fff' }
   return (
@@ -277,10 +283,11 @@ function InventoryTab() {
 }
 
 function PurchasesTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const { data, isLoading } = useQuery({
-    queryKey: ['purchase-report', from, to],
-    queryFn: () => getPurchaseReport(p({ date_from: from, date_to: to })).then(r => r.data),
+    queryKey: ['purchase-report', owner, from, to],
+    queryFn: () => getPurchaseReport(p({ owner_id: owner, date_from: from, date_to: to })).then(r => r.data),
   })
   return (
     <div>
@@ -319,10 +326,11 @@ function PurchasesTab() {
 }
 
 function SalesTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const { data, isLoading } = useQuery({
-    queryKey: ['sales-detail', from, to],
-    queryFn: () => getSalesDetailReport(p({ date_from: from, date_to: to })).then(r => r.data),
+    queryKey: ['sales-detail', owner, from, to],
+    queryFn: () => getSalesDetailReport(p({ owner_id: owner, date_from: from, date_to: to })).then(r => r.data),
   })
   const SC: Record<string,string> = { paid:'#22c55e', partial:'#f59e0b', on_account:'#8b5cf6', unpaid:'#ef4444' }
   return (
@@ -365,8 +373,9 @@ function SalesTab() {
             <SimpleTable headers={['Customer','Invoices','Total','Outstanding']} rows={data.by_customer.map((r:any)=>[r.customer,r.count,fmt(r.total),fmt(r.balance)])} />
           </Card>
           <Card><SH title="Sales History" />
-            <SimpleTable headers={['Invoice','Date','Customer','Salesperson','Total','Paid','Balance','Status']}
-              rows={data.history.map((r:any)=>[r.invoice_number,r.date,r.customer,r.salesperson,fmt(r.total),fmt(r.amount_paid),fmt(r.balance),r.payment_status])} />
+            <SimpleTable headers={['Invoice','Date','Customer','Salesperson','Total','Paid','Balance','Status', ...(owner ? [] : ['Owed by owner'])]}
+              rows={data.history.map((r:any)=>[r.invoice_number,r.date,r.customer,r.salesperson,fmt(r.total),fmt(r.amount_paid),fmt(r.balance),r.payment_status,
+                ...(owner ? [] : [(r.owners ?? []).length ? r.owners.map((o:any)=>`${o.owner}: ${fmt(o.balance)}`).join(' · ') : '—'])])} />
           </Card>
         </div>
       )}
@@ -375,10 +384,11 @@ function SalesTab() {
 }
 
 function RefurbTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const { data, isLoading } = useQuery({
-    queryKey: ['refurb-report', from, to],
-    queryFn: () => getRefurbReport(p({ date_from: from, date_to: to })).then(r => r.data),
+    queryKey: ['refurb-report', owner, from, to],
+    queryFn: () => getRefurbReport(p({ owner_id: owner, date_from: from, date_to: to })).then(r => r.data),
   })
   return (
     <div>
@@ -428,13 +438,17 @@ function RefurbTab() {
 }
 
 function ExpensesTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
-  const pp = p({ date_from: from, date_to: to })
+  const pp = p({ owner_id: owner, date_from: from, date_to: to })
+  const { house } = useStockOwners()
+  const isInvestor = !!owner && owner !== house?.id
   const { data, isLoading } = useQuery({
-    queryKey: ['exp-tab', from, to],
+    queryKey: ['exp-tab', owner, from, to],
     queryFn: async () => {
       const [list, summary] = await Promise.all([
-        getExpenses(pp).then(r => r.data),
+        // Warehouse expenses are paid by the House: an investor's view lists none
+        isInvestor ? Promise.resolve([]) : getExpenses(pp).then(r => r.data),
         getExpensesSummary(pp).then(r => r.data),
       ])
       return { list, summary }
@@ -476,10 +490,11 @@ function ExpensesTab() {
 }
 
 function ReturnsTab() {
+  const owner = useContext(ReportOwner)
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const { data, isLoading } = useQuery({
-    queryKey: ['returns-detail', from, to],
-    queryFn: () => getReturnsDetailReport(p({ date_from: from, date_to: to })).then(r => r.data),
+    queryKey: ['returns-detail', owner, from, to],
+    queryFn: () => getReturnsDetailReport(p({ owner_id: owner, date_from: from, date_to: to })).then(r => r.data),
   })
   return (
     <div>
@@ -525,8 +540,9 @@ function ReturnsTab() {
 }
 
 function ReconciliationTab() {
-  const { data, isLoading } = useQuery({ queryKey:['reconciliation'], queryFn:()=>getReconciliation().then(r=>r.data) })
-  const { data:lowStock } = useQuery({ queryKey:['low-stock'], queryFn:()=>getLowStockAlerts().then(r=>r.data) })
+  const owner = useContext(ReportOwner)
+  const { data, isLoading } = useQuery({ queryKey:['reconciliation', owner], queryFn:()=>getReconciliation(p({ owner_id: owner })).then(r=>r.data) })
+  const { data:lowStock } = useQuery({ queryKey:['low-stock', owner], queryFn:()=>getLowStockAlerts(p({ owner_id: owner })).then(r=>r.data) })
   return (
     <div>
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
@@ -686,21 +702,24 @@ const OWNER_SECTIONS: { title: string; note?: string; rows: [string, string, 'mo
     ['Parts sold to customers', 'parts_sold', 'count'],
     ['Parts sales (after discount)', 'parts_revenue', 'money'],
     ['Cost of parts sold', 'parts_cost', 'money'],
+    ['Parts supplied to other owners (sold at cost)', 'parts_to_owners_revenue', 'money'],
+    ['  cost of parts supplied', 'parts_to_owners_cost', 'money'],
     ['Delivery fees & tax (House)', 'delivery_and_tax', 'money'],
     ['Revenue', 'revenue', 'money'],
     ['Cost of sales', 'cost_of_sales', 'money'],
     ['Gross profit', 'gross_profit', 'money'],
     ['Refunds', 'refunds', 'money'],
+    ['Parts from other owners\' stock (paid)', 'parts_from_owners_expense', 'money'],
     ['Expenses (House pays all)', 'expenses', 'money'],
     ['Net profit', 'net_profit', 'money'],
   ]},
-  { title: 'Between owners (selected period)', note: 'Parts taken from another owner\'s stock for a phone. The cost is already in the phone\'s cost above; this is only what owners owe each other.', rows: [
-    ['Owes other owners (parts used)', 'owes_other_owners', 'money'],
-    ['Owed by other owners (parts supplied)', 'owed_by_other_owners', 'money'],
-    ['Net (+ owed to this owner)', 'settlement_net', 'money'],
+  { title: 'Customer money', note: 'On invoices with more than one owner\'s goods, payments are shared in proportion to each owner\'s part.', rows: [
+    ['Invoiced (selected period)', 'invoiced', 'money'],
+    ['Collected (selected period)', 'collected', 'money'],
+    ['Owed by customers now (all invoices)', 'owed_by_customers', 'money'],
   ]},
 ]
-const BOLD_KEYS = new Set(['stock_value', 'revenue', 'gross_profit', 'net_profit', 'settlement_net'])
+const BOLD_KEYS = new Set(['stock_value', 'revenue', 'gross_profit', 'net_profit', 'owed_by_customers'])
 
 function OwnerStatementTab() {
   const [from, setFrom] = useState(''); const [to, setTo] = useState('')
@@ -708,7 +727,7 @@ function OwnerStatementTab() {
     queryKey: ['owner-statement', from, to],
     queryFn: () => getOwnerStatement(p({ date_from: from, date_to: to })).then(r => r.data),
   })
-  const cols: OwnerRow[] = data ? [...data.owners, { ...data.total, owner: 'All owners (total)' }] : []
+  const cols: OwnerRow[] = data ? [...data.owners, { ...data.total, owner: 'All owners (combined)' }] : []
   const cell = (r: OwnerRow, key: string, kind: 'money' | 'count') =>
     kind === 'money' ? fmt(String(r[key] ?? '0')) : String(r[key] ?? 0)
   const period = from || to ? `${from || 'start'} to ${to || 'today'}` : 'all time'
@@ -772,7 +791,7 @@ function OwnerStatementTab() {
                           return (
                             <td key={i} style={{ padding: '5px 12px', textAlign: 'right', whiteSpace: 'nowrap',
                               fontWeight: BOLD_KEYS.has(key) ? 700 : 400,
-                              color: key === 'net_profit' || key === 'settlement_net' ? (v < 0 ? '#dc2626' : '#16a34a') : '#1e293b',
+                              color: key === 'net_profit' ? (v < 0 ? '#dc2626' : '#16a34a') : key === 'owed_by_customers' && v > 0 ? '#dc2626' : '#1e293b',
                               background: i === cols.length - 1 ? '#eff6ff' : undefined }}>
                               {cell(c, key, kind)}
                             </td>
@@ -785,16 +804,15 @@ function OwnerStatementTab() {
               </table>
             </div>
           </Card>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:16}}>
-            <Card><SH title="Who owes whom (net)" />
-              <SimpleTable headers={['Owes', 'To', 'Amount']}
-                rows={data.balances.map((b: any) => [b.from, b.to, fmt(b.amount)])} />
-            </Card>
-            <Card><SH title="Parts used across owners" />
-              <SimpleTable headers={['Date', 'Phone IMEI', 'Part', 'Qty', 'From stock of', 'Charged to', 'Amount']}
-                rows={data.charges.map((c: any) => [c.date, c.imei, c.part, c.quantity, c.payee, c.payer, fmt(c.amount)])} />
-            </Card>
+          <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+            The combined column treats parts moved between owners as internal (they cancel out) and values phones at their full cost.
+            An owner's column counts a part taken from another owner's stock as paid for straight away, so it is an expense
+            for the phone's owner and revenue for the part's owner, and is not counted again in that phone's cost.
           </div>
+          <Card><SH title="Parts used across owners (paid immediately)" />
+            <SimpleTable headers={['Date', 'Phone IMEI', 'Part', 'Qty', 'Supplied by', 'Paid by (phone owner)', 'Amount']}
+              rows={data.charges.map((c: any) => [c.date, c.imei, c.part, c.quantity, c.supplier_owner, c.phone_owner, fmt(c.amount)])} />
+          </Card>
         </div>
       )}
     </div>
@@ -821,6 +839,7 @@ export default function Reports() {
   const visible = TABS.filter(t => t.roles.includes(role))
   const [active, setActive] = useState<string>(() => visible[0]?.key ?? '')
   const current = visible.find(t => t.key === active) ? active : visible[0]?.key ?? ''
+  const [owner, setOwner] = useState('')
 
   if (!visible.length) return (
     <div style={{ padding: 28, color: '#64748b' }}>No reports available for your role.</div>
@@ -828,7 +847,15 @@ export default function Reports() {
 
   return (
     <div style={{ padding: 28 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>Reports & Analytics</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Reports & Analytics</h1>
+        {current !== 'owners' && current !== 'my_sales' && current !== 'my_refurb' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <span style={{ fontSize: 13, color: '#64748b' }}>Stock owner:</span>
+            <OwnerFilter value={owner} onChange={setOwner} />
+          </div>
+        )}
+      </div>
       <div style={{ display:'flex', gap:2, borderBottom:'2px solid #e2e8f0', marginBottom:24, flexWrap:'wrap' }}>
         {visible.map(t => (
           <button key={t.key} onClick={() => setActive(t.key)} style={{
@@ -840,6 +867,7 @@ export default function Reports() {
           }}>{t.label}</button>
         ))}
       </div>
+      <ReportOwner.Provider value={owner}>
       <div>
         {current==='operations'     && <OperationsSummaryTab />}
         {current==='inventory'      && <InventoryTab />}
@@ -853,6 +881,7 @@ export default function Reports() {
         {current==='my_sales'       && <MySalesTab />}
         {current==='my_refurb'      && <MyRefurbTab />}
       </div>
+      </ReportOwner.Provider>
     </div>
   )
 }

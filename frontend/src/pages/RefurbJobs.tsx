@@ -218,8 +218,8 @@ function ManageJobModal({ job, parts, perms, onClose }: { job: RefurbJob; parts:
           </div>
           {pickedFromOther && picked && (
             <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 4, padding: '6px 8px' }}>
-              This part is from <strong>{nameOf(picked.owner_id)}</strong>'s stock. Its cost goes on this phone,
-              and <strong>{nameOf(phoneOwnerId)}</strong> will owe {nameOf(picked.owner_id)} for it.
+              This part is from <strong>{nameOf(picked.owner_id)}</strong>'s stock. It is paid for straight away:
+              an expense for <strong>{nameOf(phoneOwnerId)}</strong> and a part sale for {nameOf(picked.owner_id)}.
             </div>
           )}
         </div>}

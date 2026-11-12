@@ -32,10 +32,10 @@ class StockOwner(Base):
 class OwnerCharge(Base):
     """A part from one owner's stock used in another owner's phone.
 
-    The part's cost goes into the phone's cost (so it reduces the phone owner's
-    profit once, when the phone is sold). This record is the settlement between
-    the two owners: `payer` (the phone's owner) owes `payee` (the part's owner)
-    `amount`, which the payee books as a part sale at cost.
+    Settled immediately at cost — nothing is left owed: `payer` (the phone's
+    owner) books `amount` as an expense, `payee` (the part's owner) books it as
+    a part sale. In the payer's accounts the part is therefore not counted again
+    in the phone's cost. In the combined view it is internal and cancels out.
     """
     __tablename__ = "owner_charges"
 

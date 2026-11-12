@@ -351,10 +351,10 @@ export default function SaleDetail() {
       <div style={{ ...S.card, display: 'flex', justifyContent: 'flex-end' }}>
         <div style={{ minWidth: 280 }}>
           {[
-            { lbl: 'Subtotal', val: `₦${fmt(sale.subtotal)}`, col: '' },
-            { lbl: 'Discount', val: `-₦${fmt(sale.discount || '0')}`, col: parseFloat(sale.discount || '0') > 0 ? '#16a34a' : '' },
-            { lbl: 'Delivery Fee', val: `₦${fmt(sale.delivery_fee || '0')}`, col: '' },
-            { lbl: 'Tax', val: `₦${fmt(sale.tax)}`, col: '' },
+            { lbl: 'Subtotal', val: fmt(sale.subtotal), col: '' },
+            { lbl: 'Discount', val: `-${fmt(sale.discount || '0')}`, col: parseFloat(sale.discount || '0') > 0 ? '#16a34a' : '' },
+            { lbl: 'Delivery Fee', val: fmt(sale.delivery_fee || '0'), col: '' },
+            { lbl: 'Tax', val: fmt(sale.tax), col: '' },
           ].map(r => (
             <div key={r.lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5, color: r.col || '#64748b' }}>
               <span>{r.lbl}</span><span>{r.val}</span>
@@ -371,6 +371,34 @@ export default function SaleDetail() {
               <span>Balance Due</span><span>{fmt(sale.balance)}</span>
             </div>
           </div>
+          {(sale.owner_split?.length ?? 0) > 1 && (
+            <div style={{ marginTop: 14, borderTop: '1px dashed #e2e8f0', paddingTop: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 }}>
+                By stock owner <span style={{ fontWeight: 400, color: '#94a3b8' }}>(internal — not on the receipt)</span>
+              </div>
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: '#64748b', textAlign: 'right' }}>
+                    <th style={{ textAlign: 'left', fontWeight: 600, padding: '2px 0' }}>Owner</th>
+                    <th style={{ fontWeight: 600 }}>Share</th><th style={{ fontWeight: 600 }}>Paid</th><th style={{ fontWeight: 600 }}>Owed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sale.owner_split!.map(o => (
+                    <tr key={o.owner_id} style={{ textAlign: 'right' }}>
+                      <td style={{ textAlign: 'left', padding: '2px 0', fontWeight: 600 }}>{o.owner}</td>
+                      <td>{fmt(o.total)}</td>
+                      <td style={{ color: '#16a34a' }}>{fmt(o.paid)}</td>
+                      <td style={{ color: parseFloat(o.balance) > 0 ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{fmt(o.balance)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                Payments are shared between owners in proportion to their share of the invoice. Delivery and tax go to House.
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

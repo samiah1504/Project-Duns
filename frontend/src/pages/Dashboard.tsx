@@ -7,6 +7,7 @@ import {
 } from '../services/api'
 import { Card, fmt } from '../components/Layout'
 import { useAuth } from '../hooks/useAuth'
+import { useStockOwners, OwnerFilter } from '../hooks/useStockOwners'
 
 // ── Shared StatCard ───────────────────────────────────────────────────────────
 
@@ -334,12 +335,16 @@ function CeoDashboard() {
   const [period, setPeriod] = useState<PeriodKey>('month')
   const [cf, setCf] = useState('')
   const [ct, setCt] = useState('')
+  const [owner, setOwner] = useState('')       // '' = all owners combined
+  const { nameOf } = useStockOwners(true)
 
-  const params = useMemo(() => {
+  const params = useMemo((): Record<string, string> | undefined => {
     const { date_from, date_to } = periodDates(period, cf, ct)
-    if (!date_from || !date_to) return undefined
-    return { date_from, date_to }
-  }, [period, cf, ct])
+    const out: Record<string, string> = {}
+    if (date_from && date_to) { out.date_from = date_from; out.date_to = date_to }
+    if (owner) out.owner_id = owner
+    return Object.keys(out).length ? out : undefined
+  }, [period, cf, ct, owner])
 
   const periodLabel = PERIOD_OPTS.find(o => o.key === period)?.label ?? ''
 
@@ -357,11 +362,14 @@ function CeoDashboard() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 4 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#0f172a' }}>CEO Dashboard</h1>
-          <p style={{ color: '#64748b', fontSize: 14, margin: '4px 0 0' }}>Welcome back, {user?.name} · {periodLabel}</p>
+          <p style={{ color: '#64748b', fontSize: 14, margin: '4px 0 0' }}>
+            Welcome back, {user?.name} · {periodLabel} · {owner ? <strong style={{ color: '#92400e' }}>{nameOf(owner)} only</strong> : 'All owners combined'}
+          </p>
         </div>
 
-        {/* Period selector */}
+        {/* Owner + period selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <OwnerFilter value={owner} onChange={setOwner} />
           <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 3, gap: 2 }}>
             {PERIOD_OPTS.map(opt => (
               <button key={opt.key} onClick={() => setPeriod(opt.key)} style={{
@@ -845,15 +853,20 @@ function CeoDashboard() {
 function SimpleDashboard() {
   const { user } = useAuth()
   const showFinancials = user?.role === 'ADMIN' || user?.role === 'RECORDS'
-  const recon = useQuery({ queryKey: ['reconciliation'], queryFn: () => getReconciliation().then(r => r.data) })
-  const wip = useQuery({ queryKey: ['wip'], queryFn: () => getWIPValue().then(r => r.data), enabled: showFinancials })
-  const alerts = useQuery({ queryKey: ['low-stock'], queryFn: () => getLowStockAlerts().then(r => r.data) })
-  const sales = useQuery({ queryKey: ['sales-summary'], queryFn: () => getSalesSummary().then(r => r.data), enabled: showFinancials })
+  const [owner, setOwner] = useState('')       // '' = all owners combined
+  const op = owner ? { owner_id: owner } : undefined
+  const recon = useQuery({ queryKey: ['reconciliation', owner], queryFn: () => getReconciliation(op).then(r => r.data) })
+  const wip = useQuery({ queryKey: ['wip', owner], queryFn: () => getWIPValue(op).then(r => r.data), enabled: showFinancials })
+  const alerts = useQuery({ queryKey: ['low-stock', owner], queryFn: () => getLowStockAlerts(op).then(r => r.data) })
+  const sales = useQuery({ queryKey: ['sales-summary', owner], queryFn: () => getSalesSummary(op).then(r => r.data), enabled: showFinancials })
 
   return (
     <div style={{ padding: 28 }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Dashboard</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700 }}>Dashboard</h1>
+          <div style={{ marginLeft: 'auto' }}><OwnerFilter value={owner} onChange={setOwner} /></div>
+        </div>
         <p style={{ color: '#64748b', fontSize: 14, marginTop: 4 }}>Welcome back, {user?.name}</p>
       </div>
       <div style={{ marginBottom: 20 }}>

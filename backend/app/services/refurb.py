@@ -492,8 +492,8 @@ async def add_parts_to_job(
         )
         db.add(job_part)
 
-        # Part from another owner's stock: its cost still goes into this phone,
-        # and the phone's owner owes the part's owner for it (a part sale at cost).
+        # Part from another owner's stock: settled immediately at cost — an
+        # expense for the phone's owner, a part sale for the part's owner.
         part_owner_id = part.owner_id or await get_house_owner_id(db)
         charge_note = ""
         if part_owner_id != device_owner_id:
@@ -514,8 +514,8 @@ async def add_parts_to_job(
                 select(StockOwner.id, StockOwner.name).where(StockOwner.id.in_([part_owner_id, device_owner_id]))
             )).all())
             charge_note = (
-                f" — part from {names.get(part_owner_id, '?')} stock; "
-                f"{names.get(device_owner_id, '?')} owes {line_cost}"
+                f" — part from {names.get(part_owner_id, '?')} stock, paid {line_cost} by "
+                f"{names.get(device_owner_id, '?')} (expense) to {names.get(part_owner_id, '?')} (part sale)"
             )
 
         await write_audit(

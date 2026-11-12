@@ -16,6 +16,10 @@ from app.models.return_rma import ReturnRMA, RestockOutcome
 from app.models.user import User
 from app.models.customer import Customer
 from app.schemas.expense import ExpensesSummaryReport, ExpenseSummaryItem
+from app.models.stock_owner import get_house_owner_id
+from app.services.owner_alloc import (
+    owner_sales, owner_devices, charges_by_device, inter_owner_parts, owner_balances_by_customer,
+)
 from app.schemas.reports import (
     ReconciliationReport,
     InventoryValuationReport,
@@ -39,11 +43,26 @@ def _ev(x):
     return x.value if hasattr(x, "value") else (x if x is not None else None)
 
 
-async def get_reconciliation(db: AsyncSession) -> ReconciliationReport:
+# ── Stock owner filtering ────────────────────────────────────────────────────
+# Every report takes an optional owner_id. None = combined (all owners), which
+# behaves exactly as before. With an owner, only that owner's stock counts,
+# invoices are split by owner (app/services/owner_alloc.py), expenses belong to
+# the House only and refunds to the returned phone's owner.
+
+def _dev_owner(q, owner_id: Optional[str]):
+    return q.where(Device.owner_id == owner_id) if owner_id else q
+
+
+async def _expenses_visible(db: AsyncSession, owner_id: Optional[str]) -> bool:
+    """Expenses are all paid by the House: shown for House or combined only."""
+    return not owner_id or owner_id == await get_house_owner_id(db)
+
+
+async def get_reconciliation(db: AsyncSession, owner_id: Optional[str] = None) -> ReconciliationReport:
     counts = {}
     for status in DeviceStatus:
         result = await db.execute(
-            select(func.count(Device.id)).where(Device.status == status)
+            _dev_owner(select(func.count(Device.id)).where(Device.status == status), owner_id)
         )
         counts[status] = result.scalar() or 0
 
@@ -75,9 +94,9 @@ async def get_reconciliation(db: AsyncSession) -> ReconciliationReport:
     )
 
 
-async def get_inventory_valuation(db: AsyncSession) -> InventoryValuationReport:
+async def get_inventory_valuation(db: AsyncSession, owner_id: Optional[str] = None) -> InventoryValuationReport:
     result = await db.execute(
-        select(Device).where(
+        _dev_owner(select(Device), owner_id).where(
             Device.status.in_([
                 DeviceStatus.AWAITING_REFURB,
                 DeviceStatus.IN_REFURB,
@@ -88,6 +107,8 @@ async def get_inventory_valuation(db: AsyncSession) -> InventoryValuationReport:
         )
     )
     devices = result.scalars().all()
+    if owner_id:
+        devices = await owner_devices(db, list(devices))
 
     items = []
     total_value = Decimal("0.00")
@@ -108,31 +129,34 @@ async def get_inventory_valuation(db: AsyncSession) -> InventoryValuationReport:
     return InventoryValuationReport(items=items, total_value=total_value, count=len(items))
 
 
-async def get_wip_value(db: AsyncSession) -> WIPValueReport:
+async def get_wip_value(db: AsyncSession, owner_id: Optional[str] = None) -> WIPValueReport:
     result = await db.execute(
-        select(Device).where(
+        _dev_owner(select(Device), owner_id).where(
             Device.status.in_([DeviceStatus.IN_REFURB, DeviceStatus.SENT_EXTERNAL, DeviceStatus.AWAITING_REFURB])
         )
     )
     devices = result.scalars().all()
+    if owner_id:
+        devices = await owner_devices(db, list(devices))
     total = sum(d.total_cost for d in devices)
     count = len(devices)
     avg = total / count if count else Decimal("0.00")
     return WIPValueReport(total_wip_value=total, device_count=count, avg_cost_per_device=avg)
 
 
-async def get_engineer_performance(db: AsyncSession) -> EngineerPerformanceReport:
+async def get_engineer_performance(db: AsyncSession, owner_id: Optional[str] = None) -> EngineerPerformanceReport:
     result = await db.execute(select(User).where(User.role == "ENGINEER"))
     engineers = result.scalars().all()
 
     items = []
     for eng in engineers:
-        jobs_result = await db.execute(
-            select(RefurbJob).where(
-                RefurbJob.assigned_engineer_id == eng.id,
-                RefurbJob.status == JobStatus.CLOSED,
-            )
+        jq = select(RefurbJob).where(
+            RefurbJob.assigned_engineer_id == eng.id,
+            RefurbJob.status == JobStatus.CLOSED,
         )
+        if owner_id:
+            jq = jq.join(Device, Device.id == RefurbJob.device_id).where(Device.owner_id == owner_id)
+        jobs_result = await db.execute(jq)
         jobs = jobs_result.scalars().all()
 
         turnarounds = []
@@ -169,10 +193,13 @@ async def get_sales_summary(
     db: AsyncSession,
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> SalesSummaryReport:
     query = select(Sale)
     result = await db.execute(query)
     sales = result.scalars().all()
+    if owner_id:
+        sales = await owner_sales(db, list(sales), owner_id)
 
     total_invoices = len(sales)
     total_revenue = sum(s.total for s in sales)
@@ -195,8 +222,11 @@ async def get_sales_summary(
     )
 
 
-async def get_returns_analysis(db: AsyncSession) -> ReturnsAnalysisReport:
-    result = await db.execute(select(ReturnRMA))
+async def get_returns_analysis(db: AsyncSession, owner_id: Optional[str] = None) -> ReturnsAnalysisReport:
+    rq = select(ReturnRMA)
+    if owner_id:
+        rq = rq.join(Device, Device.id == ReturnRMA.device_id).where(Device.owner_id == owner_id)
+    result = await db.execute(rq)
     returns = result.scalars().all()
 
     by_reason: dict = {}
@@ -224,10 +254,11 @@ async def get_returns_analysis(db: AsyncSession) -> ReturnsAnalysisReport:
     )
 
 
-async def get_low_stock_alerts(db: AsyncSession) -> LowStockReport:
-    result = await db.execute(
-        select(Part).where(Part.quantity_on_hand <= Part.min_stock_level)
-    )
+async def get_low_stock_alerts(db: AsyncSession, owner_id: Optional[str] = None) -> LowStockReport:
+    lq = select(Part).where(Part.quantity_on_hand <= Part.min_stock_level)
+    if owner_id:
+        lq = lq.where(Part.owner_id == owner_id)
+    result = await db.execute(lq)
     parts = result.scalars().all()
 
     alerts = [
@@ -244,17 +275,17 @@ async def get_low_stock_alerts(db: AsyncSession) -> LowStockReport:
     return LowStockReport(alerts=alerts, total_alerts=len(alerts))
 
 
-async def get_yield_conversion(db: AsyncSession) -> YieldConversionReport:
-    total_result = await db.execute(select(func.count(Device.id)))
+async def get_yield_conversion(db: AsyncSession, owner_id: Optional[str] = None) -> YieldConversionReport:
+    total_result = await db.execute(_dev_owner(select(func.count(Device.id)), owner_id))
     total = total_result.scalar() or 0
 
     sellable_result = await db.execute(
-        select(func.count(Device.id)).where(Device.status == DeviceStatus.SELLABLE)
+        _dev_owner(select(func.count(Device.id)), owner_id).where(Device.status == DeviceStatus.SELLABLE)
     )
     sellable = sellable_result.scalar() or 0
 
     scrapped_result = await db.execute(
-        select(func.count(Device.id)).where(Device.status == DeviceStatus.SCRAPPED)
+        _dev_owner(select(func.count(Device.id)), owner_id).where(Device.status == DeviceStatus.SCRAPPED)
     )
     scrapped = scrapped_result.scalar() or 0
 
@@ -276,6 +307,7 @@ async def get_expenses_summary(
     db: AsyncSession,
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
+    owner_id: Optional[str] = None,
 ) -> ExpensesSummaryReport:
     q = select(Expense)
     if date_from:
@@ -283,7 +315,8 @@ async def get_expenses_summary(
     if date_to:
         q = q.where(Expense.date <= date_to)
     result = await db.execute(q)
-    expenses = result.scalars().all()
+    # Warehouse expenses are all paid by the House
+    expenses = list(result.scalars().all()) if await _expenses_visible(db, owner_id) else []
 
     totals_by_title: dict[str, dict] = {}
     for e in expenses:
@@ -293,17 +326,26 @@ async def get_expenses_summary(
         totals_by_title[key]["count"] += 1
         totals_by_title[key]["total"] += e.amount
 
+    extra_total = Decimal("0.00")
+    extra_count = 0
+    if owner_id:
+        # Parts this owner's phones took from other owners' stock, paid at once
+        bought = (await inter_owner_parts(db, owner_id, date_from, date_to))["bought"]
+        if bought:
+            totals_by_title["Parts from other owners' stock"] = {"count": 1, "total": bought}
+            extra_total, extra_count = bought, 1
+
     items = [
         ExpenseSummaryItem(title=k, count=v["count"], total=v["total"])
         for k, v in sorted(totals_by_title.items(), key=lambda x: x[1]["total"], reverse=True)
     ]
-    grand_total = sum(e.amount for e in expenses)
+    grand_total = sum((e.amount for e in expenses), Decimal("0.00")) + extra_total
 
     return ExpensesSummaryReport(
         period_start=date_from.isoformat() if date_from else None,
         period_end=date_to.isoformat() if date_to else None,
-        total_expenses=grand_total if expenses else Decimal("0.00"),
-        expense_count=len(expenses),
+        total_expenses=grand_total,
+        expense_count=len(expenses) + extra_count,
         items=items,
     )
 
@@ -316,8 +358,9 @@ async def get_inventory_report(
     date_to: Optional[date_type] = None,
     status_filter: Optional[str] = None,
     grade_filter: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
-    q = select(Device)
+    q = _dev_owner(select(Device), owner_id)
     if date_from:
         q = q.where(Device.created_at >= datetime.combine(date_from, datetime.min.time()))
     if date_to:
@@ -358,6 +401,7 @@ async def get_purchase_report(
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
     supplier_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
     q = (
         select(PurchaseOrder)
@@ -370,6 +414,8 @@ async def get_purchase_report(
         q = q.where(PurchaseOrder.date <= date_to)
     if supplier_id:
         q = q.where(PurchaseOrder.supplier_id == supplier_id)
+    if owner_id:
+        q = q.where(PurchaseOrder.owner_id == owner_id)
 
     result = await db.execute(q)
     orders = result.scalars().all()
@@ -416,8 +462,9 @@ async def get_sales_detail_report(
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
     user_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
-    q = select(Sale).options(selectinload(Sale.customer))
+    q = select(Sale).options(selectinload(Sale.customer), selectinload(Sale.line_items))
     if date_from:
         q = q.where(Sale.date >= date_from)
     if date_to:
@@ -427,6 +474,12 @@ async def get_sales_detail_report(
     q = q.order_by(Sale.date.desc())
     result = await db.execute(q)
     sales = result.scalars().all()
+    house_id = await get_house_owner_id(db)
+    owner_names = await _owner_names(db)
+    if owner_id:
+        # This owner's share of each invoice (their goods, share of discount,
+        # payments and balance in proportion)
+        sales = await owner_sales(db, list(sales), owner_id)
 
     total_revenue = sum(s.total for s in sales)
     total_paid = sum(s.amount_paid for s in sales)
@@ -464,6 +517,8 @@ async def get_sales_detail_report(
             "amount_paid": str(s.amount_paid),
             "balance": str(s.balance),
             "payment_status": s.payment_status.value,
+            # On invoices mixing owners' goods: what each owner is owed
+            "owners": [] if owner_id else _owner_split_rows(s, house_id, owner_names),
         }
         for s in sales
     ]
@@ -486,6 +541,24 @@ async def get_sales_detail_report(
     }
 
 
+async def _owner_names(db: AsyncSession) -> dict[str, str]:
+    from app.models.stock_owner import StockOwner
+    return dict((await db.execute(select(StockOwner.id, StockOwner.name))).all())
+
+
+def _owner_split_rows(sale, house_id: str, names: dict[str, str]) -> list[dict]:
+    """Per-owner total / paid / balance of an invoice, when it mixes owners' goods."""
+    from app.services.owner_alloc import split_sale
+    split = {k: v for k, v in split_sale(sale, house_id).items() if v["total"] != 0}
+    if len(split) < 2:
+        return []
+    return [
+        {"owner_id": k, "owner": names.get(k, "?"), "total": str(v["total"]),
+         "paid": str(v["paid"]), "balance": str(v["balance"])}
+        for k, v in sorted(split.items(), key=lambda kv: kv[0] != house_id)
+    ]
+
+
 def _job_device_fields(j) -> dict:
     """IMEI / inventory # / model for a refurb job row, so reports trace devices."""
     d = j.device
@@ -501,6 +574,7 @@ async def get_refurb_report(
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
     engineer_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
     q = (
         select(RefurbJob)
@@ -508,6 +582,8 @@ async def get_refurb_report(
                  selectinload(RefurbJob.assigned_engineer),
                  selectinload(RefurbJob.device).selectinload(Device.model))
     )
+    if owner_id:
+        q = q.join(Device, Device.id == RefurbJob.device_id).where(Device.owner_id == owner_id)
     if date_from:
         q = q.where(RefurbJob.date_opened >= date_from)
     if date_to:
@@ -582,8 +658,11 @@ async def get_returns_detail_report(
     db: AsyncSession,
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
     q = select(ReturnRMA).options(selectinload(ReturnRMA.customer), selectinload(ReturnRMA.device))
+    if owner_id:
+        q = q.join(Device, Device.id == ReturnRMA.device_id).where(Device.owner_id == owner_id)
     if date_from:
         q = q.where(ReturnRMA.date >= date_from)
     if date_to:
@@ -642,6 +721,7 @@ async def get_operations_summary(
     db: AsyncSession,
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
+    owner_id: Optional[str] = None,
 ) -> dict:
     # Sales
     sq = select(Sale)
@@ -651,12 +731,16 @@ async def get_operations_summary(
         sq = sq.where(Sale.date <= date_to)
     sales_res = await db.execute(sq)
     sales = sales_res.scalars().all()
+    if owner_id:
+        sales = await owner_sales(db, list(sales), owner_id)
     total_revenue = sum(s.total for s in sales)
     total_received = sum(s.amount_paid for s in sales)
     outstanding_bal = sum(s.balance for s in sales)
 
     # Purchases
     pq = select(PurchaseOrder).options(selectinload(PurchaseOrder.line_items))
+    if owner_id:
+        pq = pq.where(PurchaseOrder.owner_id == owner_id)
     if date_from:
         pq = pq.where(PurchaseOrder.date >= date_from)
     if date_to:
@@ -670,6 +754,8 @@ async def get_operations_summary(
 
     # Refurb costs
     rq = select(RefurbJob).options(selectinload(RefurbJob.parts_used))
+    if owner_id:
+        rq = rq.join(Device, Device.id == RefurbJob.device_id).where(Device.owner_id == owner_id)
     if date_from:
         rq = rq.where(RefurbJob.date_opened >= date_from)
     if date_to:
@@ -682,11 +768,15 @@ async def get_operations_summary(
     )
 
     # Parts & Accessories: current stock value (cost price) and external sales
-    _all_parts = (await db.execute(select(Part))).scalars().all()
+    _all_parts = (await db.execute(
+        select(Part).where(Part.owner_id == owner_id) if owner_id else select(Part)
+    )).scalars().all()
     parts_stock_value = sum(
         (p.unit_cost or Decimal("0")) * p.quantity_on_hand for p in _all_parts
     )
     _psq = select(SaleLineItem).join(Sale).where(SaleLineItem.part_id != None)  # noqa: E711
+    if owner_id:
+        _psq = _psq.where(SaleLineItem.owner_id == owner_id)
     if date_from:
         _psq = _psq.where(Sale.date >= date_from)
     if date_to:
@@ -705,10 +795,12 @@ async def get_operations_summary(
     if date_to:
         eq = eq.where(Expense.date <= date_to)
     exp_res = await db.execute(eq)
-    warehouse_expenses = exp_res.scalar() or Decimal("0.00")
+    warehouse_expenses = (exp_res.scalar() or Decimal("0.00")) if await _expenses_visible(db, owner_id) else Decimal("0.00")
 
     # Refunds
     ret_q = select(func.sum(ReturnRMA.refund_amount))
+    if owner_id:
+        ret_q = ret_q.join(Device, Device.id == ReturnRMA.device_id).where(Device.owner_id == owner_id)
     if date_from:
         ret_q = ret_q.where(ReturnRMA.date >= date_from)
     if date_to:
@@ -718,23 +810,31 @@ async def get_operations_summary(
 
     # Current inventory snapshot (no date filter — current state)
     inv_res = await db.execute(
-        select(Device).where(Device.status.in_([DeviceStatus.SELLABLE, DeviceStatus.RESERVED]))
+        _dev_owner(select(Device), owner_id).where(Device.status.in_([DeviceStatus.SELLABLE, DeviceStatus.RESERVED]))
     )
     in_stock_devices = inv_res.scalars().all()
+    if owner_id:
+        in_stock_devices = await owner_devices(db, list(in_stock_devices))
     stock_value = sum(d.total_cost for d in in_stock_devices)
 
     refurb_res = await db.execute(
-        select(func.count(Device.id)).where(
+        _dev_owner(select(func.count(Device.id)), owner_id).where(
             Device.status.in_([DeviceStatus.IN_REFURB, DeviceStatus.AWAITING_REFURB, DeviceStatus.SENT_EXTERNAL])
         )
     )
     in_refurb_count = refurb_res.scalar() or 0
 
-    sold_res = await db.execute(select(func.count(Device.id)).where(Device.status == DeviceStatus.SOLD))
+    sold_res = await db.execute(_dev_owner(select(func.count(Device.id)), owner_id).where(Device.status == DeviceStatus.SOLD))
     sold_count = sold_res.scalar() or 0
 
-    returned_res = await db.execute(select(func.count(Device.id)).where(Device.status == DeviceStatus.RETURNED))
+    returned_res = await db.execute(_dev_owner(select(func.count(Device.id)), owner_id).where(Device.status == DeviceStatus.RETURNED))
     returned_count = returned_res.scalar() or 0
+
+    # Parts this owner supplied to other owners' phones: paid at once (money in).
+    # Parts their phones took from others are already in parts_cost above.
+    parts_to_owners = (await inter_owner_parts(db, owner_id, date_from, date_to))["sold"] if owner_id else Decimal("0.00")
+    total_revenue += parts_to_owners
+    total_received += parts_to_owners
 
     total_money_out = stock_purchased + parts_cost + external_cost + warehouse_expenses + refunds_issued
     gross_profit = total_revenue - stock_purchased - parts_cost - external_cost
@@ -744,6 +844,7 @@ async def get_operations_summary(
         "money_in": {
             "total_sales": str(total_revenue),
             "total_payments_received": str(total_received),
+            "parts_supplied_to_other_owners": str(parts_to_owners),
         },
         "money_out": {
             "stock_purchased": str(stock_purchased),
@@ -908,8 +1009,12 @@ async def get_ceo_dashboard(
     db: AsyncSession,
     date_from: date_type,
     date_to: date_type,
+    owner_id: Optional[str] = None,
 ) -> dict:
-    """Comprehensive CEO dashboard — all KPIs in one call."""
+    """Comprehensive CEO dashboard — all KPIs in one call.
+
+    owner_id: one stock owner's view (their stock, their share of invoices,
+    House-only expenses); None = combined, all owners."""
     from collections import defaultdict
     from datetime import timedelta
 
@@ -941,23 +1046,34 @@ async def get_ceo_dashboard(
         .where(Sale.date >= start_of_week, Sale.date <= today)
     )
     sales_week = (await db.execute(sales_week_q)).scalars().all()
+    if owner_id:
+        sales_period = await owner_sales(db, list(sales_period), owner_id)
+        sales_today = await owner_sales(db, list(sales_today), owner_id)
+        sales_week = await owner_sales(db, list(sales_week), owner_id)
 
     # ── Outstanding customer balances (all time) ───────────────────────────
     outstanding_res = await db.execute(
         select(func.sum(Sale.total - Sale.amount_paid)).where(Sale.amount_paid < Sale.total)
     )
     outstanding_balances = outstanding_res.scalar() or Decimal("0.00")
+    owner_customer_balances: dict[str, Decimal] = {}
+    if owner_id:
+        # What customers still owe this owner (their share of unpaid invoices)
+        owner_customer_balances = await owner_balances_by_customer(db, owner_id)
+        outstanding_balances = sum(owner_customer_balances.values(), Decimal("0.00"))
 
     # ── Inventory counts (current state, no date filter) ──────────────────
     inv_counts: dict[DeviceStatus, int] = {}
     for status in DeviceStatus:
-        r = await db.execute(select(func.count(Device.id)).where(Device.status == status))
+        r = await db.execute(_dev_owner(select(func.count(Device.id)), owner_id).where(Device.status == status))
         inv_counts[status] = r.scalar() or 0
 
-    in_stock_q = select(Device).where(
+    in_stock_q = _dev_owner(select(Device), owner_id).where(
         Device.status.in_([DeviceStatus.SELLABLE, DeviceStatus.RESERVED])
     )
     in_stock_devices = (await db.execute(in_stock_q)).scalars().all()
+    if owner_id:
+        in_stock_devices = await owner_devices(db, list(in_stock_devices))
     inventory_value = sum(d.total_cost for d in in_stock_devices)
 
     # ── Refurb jobs in period ─────────────────────────────────────────────
@@ -966,6 +1082,8 @@ async def get_ceo_dashboard(
         .options(selectinload(RefurbJob.parts_used), selectinload(RefurbJob.assigned_engineer))
         .where(RefurbJob.date_opened >= date_from, RefurbJob.date_opened <= date_to)
     )
+    if owner_id:
+        refurb_q = refurb_q.join(Device, Device.id == RefurbJob.device_id).where(Device.owner_id == owner_id)
     refurb_jobs = (await db.execute(refurb_q)).scalars().all()
 
     # ── Purchase orders in period ─────────────────────────────────────────
@@ -974,9 +1092,13 @@ async def get_ceo_dashboard(
         .options(selectinload(PurchaseOrder.line_items))
         .where(PurchaseOrder.date >= date_from, PurchaseOrder.date <= date_to)
     )
+    if owner_id:
+        po_q = po_q.where(PurchaseOrder.owner_id == owner_id)
     pos_period = (await db.execute(po_q)).scalars().all()
 
     pending_po_q = select(PurchaseOrder).where(PurchaseOrder.status == POStatus.OPEN)
+    if owner_id:
+        pending_po_q = pending_po_q.where(PurchaseOrder.owner_id == owner_id)
     pending_pos = (await db.execute(pending_po_q)).scalars().all()
 
     recent_po_q = (
@@ -985,18 +1107,26 @@ async def get_ceo_dashboard(
         .order_by(PurchaseOrder.created_at.desc())
         .limit(5)
     )
+    if owner_id:
+        recent_po_q = recent_po_q.where(PurchaseOrder.owner_id == owner_id)
     recent_pos = (await db.execute(recent_po_q)).scalars().all()
 
     # ── Expenses in period ────────────────────────────────────────────────
     exp_q = select(Expense).where(Expense.date >= date_from, Expense.date <= date_to)
     expenses_period = (await db.execute(exp_q)).scalars().all()
+    if not await _expenses_visible(db, owner_id):
+        expenses_period = []   # all warehouse expenses are paid by the House
 
     # ── Returns in period ─────────────────────────────────────────────────
     ret_q = select(ReturnRMA).where(ReturnRMA.date >= date_from, ReturnRMA.date <= date_to)
+    if owner_id:
+        ret_q = ret_q.join(Device, Device.id == ReturnRMA.device_id).where(Device.owner_id == owner_id)
     returns_period = (await db.execute(ret_q)).scalars().all()
 
     # ── Parts & Accessories stock (current state) ─────────────────────────
-    all_parts = (await db.execute(select(Part))).scalars().all()
+    all_parts = (await db.execute(
+        select(Part).where(Part.owner_id == owner_id) if owner_id else select(Part)
+    )).scalars().all()
     parts_stock_units = sum(p.quantity_on_hand for p in all_parts)
     # Valuation always at COST price, never selling price
     parts_stock_value = sum(
@@ -1016,33 +1146,47 @@ async def get_ceo_dashboard(
 
     # ── Alerts ────────────────────────────────────────────────────────────
     low_stock_parts = (
-        await db.execute(select(Part).where(Part.quantity_on_hand <= Part.min_stock_level))
+        await db.execute(
+            select(Part).where(Part.quantity_on_hand <= Part.min_stock_level, Part.owner_id == owner_id)
+            if owner_id else select(Part).where(Part.quantity_on_hand <= Part.min_stock_level)
+        )
     ).scalars().all()
 
     cutoff_14 = datetime.utcnow() - timedelta(days=14)
     cutoff_30 = datetime.utcnow() - timedelta(days=30)
 
     long_refurb_count = (await db.execute(
-        select(func.count(Device.id)).where(
+        _dev_owner(select(func.count(Device.id)), owner_id).where(
             Device.status.in_([DeviceStatus.IN_REFURB, DeviceStatus.AWAITING_REFURB]),
             Device.updated_at <= cutoff_14,
         )
     )).scalar() or 0
 
     overdue_external_count = (await db.execute(
-        select(func.count(Device.id)).where(
+        _dev_owner(select(func.count(Device.id)), owner_id).where(
             Device.status == DeviceStatus.SENT_EXTERNAL,
             Device.updated_at <= cutoff_30,
         )
     )).scalar() or 0
 
-    overdue_customers = (await db.execute(
-        select(Customer).where(Customer.current_balance > 0).order_by(Customer.current_balance.desc()).limit(10)
-    )).scalars().all()
+    if owner_id:
+        # Customers' balances owed to this owner only
+        from app.services.owner_alloc import _View
+        top = sorted(((cid, amt) for cid, amt in owner_customer_balances.items() if amt > 0),
+                     key=lambda x: x[1], reverse=True)[:10]
+        custs = {c.id: c for c in (await db.execute(
+            select(Customer).where(Customer.id.in_([cid for cid, _ in top]))
+        )).scalars().all()} if top else {}
+        overdue_customers = [_View(custs[cid], current_balance=amt) for cid, amt in top if cid in custs]
+    else:
+        overdue_customers = (await db.execute(
+            select(Customer).where(Customer.current_balance > 0).order_by(Customer.current_balance.desc()).limit(10)
+        )).scalars().all()
 
-    pending_returns_count = (await db.execute(
-        select(func.count(ReturnRMA.id)).where(ReturnRMA.resolution == None)  # noqa: E711
-    )).scalar() or 0
+    _prq = select(func.count(ReturnRMA.id)).where(ReturnRMA.resolution == None)  # noqa: E711
+    if owner_id:
+        _prq = _prq.join(Device, Device.id == ReturnRMA.device_id).where(Device.owner_id == owner_id)
+    pending_returns_count = (await db.execute(_prq)).scalar() or 0
 
     reserved_count = inv_counts.get(DeviceStatus.RESERVED, 0)
 
@@ -1106,6 +1250,16 @@ async def get_ceo_dashboard(
 
     # Returns / refunds
     refunds_period = sum(r.refund_amount or Decimal("0") for r in returns_period)
+
+    # Parts used across owners, settled at once: revenue (at cost) for the
+    # supplying owner, expense for the phone's owner. Internal in the combined view.
+    parts_to_owners = parts_from_owners = Decimal("0.00")
+    if owner_id:
+        _x = await inter_owner_parts(db, owner_id, date_from, date_to)
+        parts_to_owners, parts_from_owners = _x["sold"], _x["bought"]
+        revenue_period += parts_to_owners
+        cogs += parts_to_owners
+        expenses_total += parts_from_owners
 
     # Profit
     gross_profit = revenue_period - cogs
@@ -1252,6 +1406,8 @@ async def get_ceo_dashboard(
             "parts_stock_value": str(parts_stock_value),
             "parts_stock_units": parts_stock_units,
             "inventory_value_total": str(inventory_value + parts_stock_value),
+            "parts_supplied_to_other_owners": str(parts_to_owners),
+            "parts_from_other_owners": str(parts_from_owners),
         },
         "parts_accessories": {
             "stock_items": len(all_parts),
