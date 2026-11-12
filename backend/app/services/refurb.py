@@ -11,6 +11,7 @@ from app.models.device import Device, DeviceStatus, DeviceLocation, DeviceGrade
 from app.models.part import Part
 from app.models.audit_log import ReferenceType
 from app.models.return_rma import ReturnRMA, ReturnResolution
+from app.models.stock_owner import StockOwner, OwnerCharge, get_house_owner_id
 from app.services.audit import write_audit
 from app.services.device_state_machine import validate_transition
 from app.core.exceptions import BadRequestError, NotFoundError
@@ -57,8 +58,15 @@ async def _insert_job(db: AsyncSession, **fields) -> RefurbJob:
         if rma:
             note = f"Customer repair for return {rma.rma_number} — return phone to customer after QC"
             fields["notes"] = (fields["notes"] + "\n" if fields.get("notes") else "") + note
-    for _ in range(5):
-        job = RefurbJob(job_number=await generate_job_number(db), **fields)
+    last_tried = 0
+    for _ in range(50):
+        number = await generate_job_number(db)
+        # Requests still in flight aren't visible yet, so always move past the
+        # number we last tried; each retry is guaranteed to make progress.
+        prefix, _sep, seq = number.rpartition("-")
+        seq_no = max(int(seq), last_tried + 1)
+        last_tried = seq_no
+        job = RefurbJob(job_number=f"{prefix}-{str(seq_no).zfill(3)}", **fields)
         try:
             async with db.begin_nested():
                 db.add(job)
@@ -454,6 +462,7 @@ async def add_parts_to_job(
         raise BadRequestError("No parts supplied")
 
     device = await _get_device(db, job.device_id)
+    device_owner_id = device.owner_id or await get_house_owner_id(db)
 
     total_parts_cost = Decimal("0.00")
 
@@ -483,6 +492,32 @@ async def add_parts_to_job(
         )
         db.add(job_part)
 
+        # Part from another owner's stock: settled immediately at cost — an
+        # expense for the phone's owner, a part sale for the part's owner.
+        part_owner_id = part.owner_id or await get_house_owner_id(db)
+        charge_note = ""
+        if part_owner_id != device_owner_id:
+            db.add(OwnerCharge(
+                date=date.today(),
+                payer_owner_id=device_owner_id,
+                payee_owner_id=part_owner_id,
+                part_id=part.id,
+                quantity=part_data.quantity,
+                unit_cost=unit_cost,
+                amount=line_cost,
+                device_id=device.id,
+                refurb_job_id=job.id,
+                created_by_user_id=user_id,
+                notes=f"{part_data.quantity} x {part.name} for job {job.job_number} ({_dev_label(device)})",
+            ))
+            names = dict((await db.execute(
+                select(StockOwner.id, StockOwner.name).where(StockOwner.id.in_([part_owner_id, device_owner_id]))
+            )).all())
+            charge_note = (
+                f" — part from {names.get(part_owner_id, '?')} stock, paid {line_cost} by "
+                f"{names.get(device_owner_id, '?')} (expense) to {names.get(part_owner_id, '?')} (part sale)"
+            )
+
         await write_audit(
             db,
             user_id=user_id,
@@ -492,7 +527,7 @@ async def add_parts_to_job(
             reference_id=job.job_number,
             notes=(
                 f"Parts consumed: -{part_data.quantity} x {part.name} "
-                f"for job {job.job_number} ({_dev_label(device)})"
+                f"for job {job.job_number} ({_dev_label(device)}){charge_note}"
             ),
         )
 

@@ -70,6 +70,10 @@ class Device(Base):
     supplier_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("suppliers.id"), nullable=True
     )
+    # Stock owner (House or an investor). Set on receipt, never changes.
+    owner_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("stock_owners.id"), nullable=True, index=True
+    )
     date_received: Mapped[date | None] = mapped_column(Date, nullable=True)
     sale_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("sales.id"), nullable=True
@@ -99,6 +103,7 @@ class Device(Base):
         "PurchaseOrder", back_populates="devices"
     )
     supplier: Mapped["Supplier | None"] = relationship("Supplier", back_populates="devices")
+    owner: Mapped["StockOwner | None"] = relationship("StockOwner")
     sale: Mapped["Sale | None"] = relationship(
         "Sale", back_populates="devices", foreign_keys=[sale_id]
     )

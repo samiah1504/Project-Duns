@@ -9,6 +9,7 @@ import { fetchTemplates } from '../hooks/useLabelTemplateAPI'
 import { getPurchaseOrders, getSuppliers, createSimplePO } from '../services/api'
 import { PurchaseOrder, POReceivedDevice, Supplier } from '../types'
 import { PageHeader, Card, Btn, fmt } from '../components/Layout'
+import { useStockOwners, OwnerTag, OwnerFilter } from '../hooks/useStockOwners'
 
 // ─── Label printing ─────────────────────────────────────────────────────────
 
@@ -256,8 +257,10 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
   open: boolean; onClose: () => void; suppliers: Supplier[]; onSuccess: (poId: string, devices: unknown[]) => void
 }) {
   const [supplierId, setSupplierId] = useState('')
+  const [ownerId, setOwnerId] = useState('')
   const [notes, setNotes] = useState('')
   const [entries, setEntries] = useState<DeviceEntry[]>([newEntry()])
+  const { owners, house } = useStockOwners()
 
   const update = (i: number, patch: Partial<DeviceEntry>) =>
     setEntries(prev => { const n = [...prev]; n[i] = { ...n[i], ...patch }; return n })
@@ -289,6 +292,7 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
 
   const reset = () => {
     setSupplierId('')
+    setOwnerId('')
     setNotes('')
     setEntries([newEntry()])
   }
@@ -312,6 +316,7 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
 
     mut.mutate({
       supplier_id: supplierId,
+      owner_id: ownerId || house?.id,
       notes: notes || undefined,
       items: entries.map(e => ({
         imei: e.imei.replace(/\D/g, ''),
@@ -353,11 +358,18 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
 
         <form onSubmit={submit}>
           {/* PO Info */}
-          <div style={{ padding: '18px 24px', borderBottom: '1px solid #f8fafc', display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+          <div style={{ padding: '18px 24px', borderBottom: '1px solid #f8fafc', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
             <F label="Supplier" required>
               <select value={supplierId} onChange={e => setSupplierId(e.target.value)} style={fs} required>
                 <option value="">Select supplier…</option>
                 {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </F>
+            <F label="Stock owner (who paid for this stock)" required>
+              <select value={ownerId || house?.id || ''} onChange={e => setOwnerId(e.target.value)} style={fs}>
+                {owners.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}{o.is_house ? ' (business stock)' : ' (investor)'}</option>
+                ))}
               </select>
             </F>
             <F label="PO Notes (optional)">
@@ -435,12 +447,14 @@ function NewPOModal({ open, onClose, suppliers, onSuccess }: {
 function POHistorySection() {
   const [expandedPO, setExpandedPO] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterOwner, setFilterOwner] = useState('')
 
   const { data: pos = [], isLoading } = useQuery<PurchaseOrder[]>({
-    queryKey: ['purchase-orders', filterStatus],
+    queryKey: ['purchase-orders', filterStatus, filterOwner],
     queryFn: () => {
       const p: Record<string, string> = {}
       if (filterStatus) p.status = filterStatus
+      if (filterOwner) p.owner_id = filterOwner
       return getPurchaseOrders(p).then(r => r.data)
     },
   })
@@ -472,6 +486,7 @@ function POHistorySection() {
           <option value="partially_received">Partially Received</option>
           <option value="closed_discrepancy">Closed (Discrepancy)</option>
         </select>
+        <OwnerFilter value={filterOwner} onChange={setFilterOwner} style={{ maxWidth: 200 }} />
       </div>
 
       {isLoading && <div style={{ color: '#94a3b8', padding: 16, textAlign: 'center' }}>Loading…</div>}
@@ -495,6 +510,7 @@ function POHistorySection() {
                 onClick={() => setExpandedPO(isExpanded ? null : po.id)}
               >
                 <div style={{ fontWeight: 800, fontSize: 14, color: '#1e293b', minWidth: 160 }}>{po.po_number}</div>
+                <OwnerTag ownerId={po.owner_id} />
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 4, background: bg, color }}>
                   {(po.status_label ?? po.status).toUpperCase()}
                 </span>

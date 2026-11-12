@@ -114,6 +114,10 @@ class SaleLineItem(Base):
     # NULL for device lines (device cost lives on the device itself).
     unit_cost_at_sale: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Owner of the phone/part sold on this line (snapshot), for per-owner accounts
+    owner_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("stock_owners.id"), nullable=True, index=True
+    )
 
     sale: Mapped["Sale"] = relationship("Sale", back_populates="line_items")
     device: Mapped["Device | None"] = relationship("Device", back_populates="sale_line_items")

@@ -46,7 +46,27 @@ async def _fetch_sale(db: AsyncSession, sale_id: str) -> Sale:
     sale = result.scalar_one_or_none()
     if not sale:
         raise NotFoundError("Sale not found")
+    await _attach_owner_split(db, sale)
     return sale
+
+
+async def _attach_owner_split(db: AsyncSession, sale: Sale) -> None:
+    """When an invoice has more than one stock owner's goods, show each owner's
+    share of the total, of what's been paid and of what the customer still owes."""
+    from app.models.stock_owner import StockOwner, get_house_owner_id
+    from app.services.owner_alloc import split_sale
+    house_id = await get_house_owner_id(db)
+    split = {k: v for k, v in split_sale(sale, house_id).items() if v["total"] != 0}
+    if len(split) < 2:
+        sale.owner_split = []
+        return
+    names = dict((await db.execute(
+        select(StockOwner.id, StockOwner.name).where(StockOwner.id.in_(list(split)))
+    )).all())
+    sale.owner_split = [
+        {"owner_id": k, "owner": names.get(k, "?"), **v}
+        for k, v in sorted(split.items(), key=lambda kv: kv[0] != house_id)
+    ]
 
 
 @router.get("", response_model=list[SaleOut])

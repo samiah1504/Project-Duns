@@ -16,9 +16,30 @@ from app.models.part import Part
 from app.models.audit_log import ReferenceType
 from app.services.audit import write_audit
 from app.core.exceptions import BadRequestError, NotFoundError, ConflictError
+from app.models.stock_owner import get_house_owner_id, resolve_owner_id
 
 
 _INV_CHARSET = string.ascii_uppercase + string.digits
+
+
+async def part_for_owner(db: AsyncSession, part: Part, owner_id: str) -> Part:
+    """The given owner's stock record for this part, created (with 0 stock) if
+    that owner doesn't stock it yet. Each owner keeps separate parts stock."""
+    if part.owner_id == owner_id:
+        return part
+    q = select(Part).where(Part.owner_id == owner_id, Part.name == part.name, Part.type == part.type)
+    q = q.where(Part.sku == part.sku) if part.sku else q.where(Part.sku.is_(None))
+    existing = (await db.execute(q.limit(1))).scalar_one_or_none()
+    if existing:
+        return existing
+    own = Part(
+        name=part.name, type=part.type, sku=part.sku, quantity_on_hand=0,
+        unit_cost=part.unit_cost, selling_price=part.selling_price, location=part.location,
+        min_stock_level=0, source=part.source, owner_id=owner_id,
+    )
+    db.add(own)
+    await db.flush()
+    return own
 
 
 async def generate_inventory_number(db: AsyncSession) -> str:
@@ -80,6 +101,7 @@ async def create_purchase_order(
     notes: Optional[str] = None,
     order_date: Optional[date] = None,
     user_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> PurchaseOrder:
     from decimal import Decimal
 
@@ -87,6 +109,7 @@ async def create_purchase_order(
     po = PurchaseOrder(
         po_number=po_number,
         supplier_id=supplier_id,
+        owner_id=await resolve_owner_id(db, owner_id),
         date=order_date or date.today(),
         shipping_cost=shipping_cost or Decimal("0.00"),
         status=POStatus.ORDERED,
@@ -247,6 +270,7 @@ async def receive_line_item(
         selling_price_set_at=datetime.utcnow() if eff_selling_price is not None else None,
         purchase_order_id=po_id,
         supplier_id=po.supplier_id,
+        owner_id=po.owner_id or await get_house_owner_id(db),
         date_received=date.today(),
     )
     db.add(device)
@@ -360,6 +384,9 @@ async def receive_part_line(
     part = part_result.scalar_one_or_none()
     if not part:
         raise NotFoundError("Linked part not found")
+    # Parts received go into the PO owner's own stock of that part
+    part = await part_for_owner(db, part, po.owner_id or await get_house_owner_id(db))
+    line_item.part_id = part.id
 
     part.quantity_on_hand += quantity
     # Latest-cost policy: a PO line with a unit cost updates the part's cost.
@@ -466,6 +493,7 @@ async def create_and_receive_po_simple(
     shipping_cost=None,
     notes: Optional[str] = None,
     user_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> PurchaseOrder:
     """Create a PO and immediately receive all items into inventory."""
     from decimal import Decimal
@@ -474,6 +502,7 @@ async def create_and_receive_po_simple(
     po = PurchaseOrder(
         po_number=po_number,
         supplier_id=supplier_id,
+        owner_id=await resolve_owner_id(db, owner_id),
         date=date.today(),
         shipping_cost=shipping_cost or Decimal("0.00"),
         status=POStatus.ORDERED,

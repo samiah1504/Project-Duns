@@ -10,11 +10,22 @@ from app.models.part import Part
 from app.models.audit_log import ReferenceType
 from app.schemas.part import PartCreate, PartUpdate, PartOut, part_to_out, PART_COST_ROLES
 from app.core.permissions import inventory_or_admin, any_authenticated, admin_or_operations
-from app.core.exceptions import NotFoundError, BadRequestError
+from app.core.exceptions import NotFoundError, BadRequestError, ConflictError
+from app.models.stock_owner import resolve_owner_id
 from app.services.audit import write_audit
 from app.models.user import User
 
 router = APIRouter()
+
+
+async def _sku_taken(db: AsyncSession, sku: Optional[str], owner_id: str, exclude_id: Optional[str] = None) -> bool:
+    """SKUs are unique per stock owner (each owner can stock the same part)."""
+    if not sku:
+        return False
+    q = select(Part.id).where(Part.sku == sku, Part.owner_id == owner_id)
+    if exclude_id:
+        q = q.where(Part.id != exclude_id)
+    return (await db.execute(q)).first() is not None
 
 
 class StockAdjust(BaseModel):
@@ -25,10 +36,13 @@ class StockAdjust(BaseModel):
 @router.get("", response_model=list[PartOut])
 async def list_parts(
     low_stock_only: bool = False,
+    owner_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(any_authenticated()),
 ):
     q = select(Part)
+    if owner_id:
+        q = q.where(Part.owner_id == owner_id)
     if low_stock_only:
         q = q.where(Part.quantity_on_hand <= Part.min_stock_level)
     result = await db.execute(q.order_by(Part.name))
@@ -37,14 +51,19 @@ async def list_parts(
 
 @router.get("/stock-valuation")
 async def parts_stock_valuation(
+    owner_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(admin_or_operations()),
 ):
     """Total Parts & Accessories stock value = Σ quantity_on_hand × unit_cost.
 
     Valuation uses COST price, never selling price. ADMIN/OPERATIONS only.
+    Optionally for one stock owner; all owners otherwise.
     """
-    result = await db.execute(select(Part))
+    q = select(Part)
+    if owner_id:
+        q = q.where(Part.owner_id == owner_id)
+    result = await db.execute(q)
     parts = result.scalars().all()
     total_units = sum(p.quantity_on_hand for p in parts)
     total_value = sum(
@@ -58,6 +77,7 @@ async def parts_stock_valuation(
             {
                 "id": p.id,
                 "name": p.name,
+                "owner_id": p.owner_id,
                 "quantity_on_hand": p.quantity_on_hand,
                 "unit_cost": str(p.unit_cost or Decimal("0")),
                 "stock_value": str((p.unit_cost or Decimal("0")) * p.quantity_on_hand),
@@ -73,7 +93,11 @@ async def create_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(inventory_or_admin()),
 ):
-    part = Part(**body.model_dump())
+    data = body.model_dump()
+    data["owner_id"] = await resolve_owner_id(db, data.get("owner_id"))
+    if await _sku_taken(db, data.get("sku"), data["owner_id"]):
+        raise ConflictError(f"SKU {data['sku']} already exists for this stock owner")
+    part = Part(**data)
     db.add(part)
     await db.flush()
     if part.quantity_on_hand:
@@ -113,7 +137,11 @@ async def update_part(
     part = result.scalar_one_or_none()
     if not part:
         raise NotFoundError("Part not found")
-    for field, value in body.model_dump(exclude_none=True).items():
+    updates = body.model_dump(exclude_none=True)
+    if "sku" in updates and await _sku_taken(db, updates["sku"], part.owner_id, exclude_id=part.id):
+        raise ConflictError(f"SKU {updates['sku']} already exists for this stock owner")
+    # owner_id is deliberately not updatable: ownership never changes
+    for field, value in updates.items():
         setattr(part, field, value)
     await db.commit()
     await db.refresh(part)

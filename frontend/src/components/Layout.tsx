@@ -22,6 +22,7 @@ const NAV = [
   { to: '/expenses', label: 'Expenses', module: 'expenses' },
   { to: '/phone-models', label: 'Phone Models', module: 'phone_models' },
   { to: '/suppliers', label: 'Suppliers', module: 'suppliers' },
+  { to: '/stock-owners', label: 'Stock Owners', module: 'stock_owners' },
   // Admin
   { to: '/users', label: 'Users', module: 'users' },
   { to: '/cost-price', label: '₦ Cost Price Mgmt', module: 'cost_price' },

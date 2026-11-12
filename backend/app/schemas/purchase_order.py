@@ -137,6 +137,7 @@ class DeviceForPOOut(BaseModel):
 
 class PurchaseOrderCreate(BaseModel):
     supplier_id: str
+    owner_id: Optional[str] = None  # stock owner; defaults to House
     date: Optional[date] = None
     shipping_cost: Decimal = Decimal("0.00")
     notes: Optional[str] = None
@@ -145,6 +146,7 @@ class PurchaseOrderCreate(BaseModel):
 
 class PurchaseOrderUpdate(BaseModel):
     supplier_id: Optional[str] = None
+    owner_id: Optional[str] = None  # only while nothing has been received
     date: Optional[date] = None
     shipping_cost: Optional[Decimal] = None
     notes: Optional[str] = None
@@ -154,6 +156,7 @@ class PurchaseOrderOut(BaseModel):
     id: str
     po_number: str
     supplier_id: str
+    owner_id: Optional[str] = None
     date: date
     shipping_cost: Decimal
     status: str
@@ -213,6 +216,7 @@ class SimpleReceiveItem(BaseModel):
 
 class SimpleReceivePORequest(BaseModel):
     supplier_id: str
+    owner_id: Optional[str] = None  # stock owner; defaults to House
     shipping_cost: Decimal = Decimal("0.00")
     notes: Optional[str] = None
     items: List[SimpleReceiveItem]

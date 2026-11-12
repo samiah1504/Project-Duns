@@ -47,6 +47,7 @@ class SaleLineItemOut(BaseModel):
     unit_price: Decimal
     line_total: Decimal
     notes: Optional[str] = None
+    owner_id: Optional[str] = None
     device: Optional[DeviceForSaleItem] = None
     # Part/accessory info for part lines. Deliberately excludes unit_cost —
     # cost stays confidential; COGS is computed server-side in reports only.
@@ -104,6 +105,14 @@ class SalePaymentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OwnerShareOut(BaseModel):
+    owner_id: str
+    owner: str
+    total: Decimal
+    paid: Decimal
+    balance: Decimal
+
+
 class SaleOut(BaseModel):
     id: str
     invoice_number: str
@@ -127,4 +136,6 @@ class SaleOut(BaseModel):
     customer: Optional[CustomerForSale] = None
     line_items: List[SaleLineItemOut] = []
     payments: List[SalePaymentOut] = []
+    # Filled when the invoice mixes stock owners' goods (empty otherwise)
+    owner_split: List[OwnerShareOut] = []
     model_config = {"from_attributes": True}

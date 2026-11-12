@@ -45,76 +45,85 @@ def financial_access():
 
 @router.get("/reconciliation")
 async def reconciliation(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_reconciliation(db)
+    return await get_reconciliation(db, owner_id=owner_id)
 
 
 @router.get("/inventory-valuation")
 async def inventory_valuation(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_inventory_valuation(db)
+    return await get_inventory_valuation(db, owner_id=owner_id)
 
 
 @router.get("/wip-value")
 async def wip_value(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_wip_value(db)
+    return await get_wip_value(db, owner_id=owner_id)
 
 
 @router.get("/engineer-performance")
 async def engineer_performance(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_engineer_performance(db)
+    return await get_engineer_performance(db, owner_id=owner_id)
 
 
 @router.get("/sales-summary")
 async def sales_summary(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(financial_access()),
 ):
-    return await get_sales_summary(db)
+    return await get_sales_summary(db, owner_id=owner_id)
 
 
 @router.get("/returns-analysis")
 async def returns_analysis(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(financial_access()),
 ):
-    return await get_returns_analysis(db)
+    return await get_returns_analysis(db, owner_id=owner_id)
 
 
 @router.get("/low-stock-alerts")
 async def low_stock_alerts(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_low_stock_alerts(db)
+    return await get_low_stock_alerts(db, owner_id=owner_id)
 
 
 @router.get("/yield-conversion")
 async def yield_conversion(
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_yield_conversion(db)
+    return await get_yield_conversion(db, owner_id=owner_id)
 
 
 @router.get("/expenses-summary")
 async def expenses_summary(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(financial_access()),
 ):
-    return await get_expenses_summary(db, date_from=date_from, date_to=date_to)
+    return await get_expenses_summary(db, date_from=date_from, date_to=date_to, owner_id=owner_id)
 
 
 # ── New report endpoints ──────────────────────────────────────────────────────
@@ -125,10 +134,11 @@ async def inventory_report(
     date_to: Optional[date_type] = Query(None),
     status: Optional[str] = Query(None),
     grade: Optional[str] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_inventory_report(db, date_from=date_from, date_to=date_to, status_filter=status, grade_filter=grade)
+    return await get_inventory_report(db, date_from=date_from, date_to=date_to, status_filter=status, grade_filter=grade, owner_id=owner_id)
 
 
 @router.get("/purchases")
@@ -136,20 +146,22 @@ async def purchase_report(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
     supplier_id: Optional[str] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_purchase_report(db, date_from=date_from, date_to=date_to, supplier_id=supplier_id)
+    return await get_purchase_report(db, date_from=date_from, date_to=date_to, supplier_id=supplier_id, owner_id=owner_id)
 
 
 @router.get("/sales-detail")
 async def sales_detail_report(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(financial_access()),
 ):
-    return await get_sales_detail_report(db, date_from=date_from, date_to=date_to)
+    return await get_sales_detail_report(db, date_from=date_from, date_to=date_to, owner_id=owner_id)
 
 
 @router.get("/refurb-report")
@@ -157,30 +169,33 @@ async def refurb_report(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
     engineer_id: Optional[str] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(inventory_or_admin()),
 ):
-    return await get_refurb_report(db, date_from=date_from, date_to=date_to, engineer_id=engineer_id)
+    return await get_refurb_report(db, date_from=date_from, date_to=date_to, engineer_id=engineer_id, owner_id=owner_id)
 
 
 @router.get("/returns-detail")
 async def returns_detail_report(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(financial_access()),
 ):
-    return await get_returns_detail_report(db, date_from=date_from, date_to=date_to)
+    return await get_returns_detail_report(db, date_from=date_from, date_to=date_to, owner_id=owner_id)
 
 
 @router.get("/operations-summary")
 async def operations_summary(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(financial_access()),
 ):
-    return await get_operations_summary(db, date_from=date_from, date_to=date_to)
+    return await get_operations_summary(db, date_from=date_from, date_to=date_to, owner_id=owner_id)
 
 
 @router.get("/my-sales")
@@ -207,6 +222,7 @@ async def my_refurb(
 async def ceo_dashboard(
     date_from: Optional[date_type] = Query(None),
     date_to: Optional[date_type] = Query(None),
+    owner_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("ADMIN")),
 ):
@@ -219,9 +235,21 @@ async def ceo_dashboard(
     df = date_from or date(today.year, today.month, 1)
     dt = date_to or today
     try:
-        return await get_ceo_dashboard(db, date_from=df, date_to=dt)
+        return await get_ceo_dashboard(db, date_from=df, date_to=dt, owner_id=owner_id)
     except HTTPException:
         raise
     except Exception as exc:
         _log.error("CEO dashboard failed: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Dashboard failed: {exc}")
+
+
+@router.get("/owner-statement")
+async def owner_statement(
+    date_from: Optional[date_type] = Query(None),
+    date_to: Optional[date_type] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(records_or_admin()),
+):
+    """Stock and accounts per stock owner (House + investors) and in total."""
+    from app.services.owner_report import get_owner_statement
+    return await get_owner_statement(db, date_from, date_to)

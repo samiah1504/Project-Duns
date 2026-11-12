@@ -9,6 +9,7 @@ import {
 import { RefurbJob, Device, Part, User } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select, fmt } from '../components/Layout'
 import { useAuth } from '../hooks/useAuth'
+import { useStockOwners, OwnerTag } from '../hooks/useStockOwners'
 
 // ─── Who can do what (mirrors backend/app/routers/refurb_jobs.py) ────────────
 type Perms = {
@@ -147,6 +148,13 @@ function ManageJobModal({ job, parts, perms, onClose }: { job: RefurbJob; parts:
   const [partId, setPartId] = useState('')
   const [qty, setQty] = useState('1')
   const [notes, setNotes] = useState('')
+  const { nameOf, house } = useStockOwners(true)
+  // Parts from the phone owner's own stock first; others are charged between owners
+  const phoneOwnerId = job.device_owner_id ?? house?.id ?? ''
+  const ownParts = parts.filter(p => (p.owner_id ?? house?.id) === phoneOwnerId)
+  const otherParts = parts.filter(p => (p.owner_id ?? house?.id) !== phoneOwnerId)
+  const picked = parts.find(p => p.id === partId)
+  const pickedFromOther = !!picked && (picked.owner_id ?? house?.id) !== phoneOwnerId
 
   const addMut = useMutation({
     mutationFn: () => addPartsToJob(job.id, { parts: [{ part_id: partId, quantity: Math.max(1, parseInt(qty) || 1) }] }),
@@ -186,17 +194,34 @@ function ManageJobModal({ job, parts, perms, onClose }: { job: RefurbJob; parts:
         )}
 
         {perms.addParts(job) && <div>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Add Parts</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            Add Parts <span style={{ fontWeight: 400, color: '#64748b' }}>— phone owner:</span> <OwnerTag ownerId={phoneOwnerId} />
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={partId} onChange={e => setPartId(e.target.value)}
               style={{ flex: 2, padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13 }}>
               <option value="">Select part…</option>
-              {parts.map(p => <option key={p.id} value={p.id}>{p.name} (stock: {p.quantity_on_hand})</option>)}
+              <optgroup label={`${nameOf(phoneOwnerId)} stock`}>
+                {ownParts.map(p => <option key={p.id} value={p.id}>{p.name} (stock: {p.quantity_on_hand})</option>)}
+              </optgroup>
+              {otherParts.length > 0 && (
+                <optgroup label="Other owners' stock (charged between owners)">
+                  {otherParts.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} — {nameOf(p.owner_id)} (stock: {p.quantity_on_hand})</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             <input type="number" value={qty} min="1" onChange={e => setQty(e.target.value)}
               style={{ width: 60, padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13 }} />
             <Btn size="sm" disabled={!partId || addMut.isPending} onClick={() => addMut.mutate()}>Add</Btn>
           </div>
+          {pickedFromOther && picked && (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 4, padding: '6px 8px' }}>
+              This part is from <strong>{nameOf(picked.owner_id)}</strong>'s stock. It is paid for straight away:
+              an expense for <strong>{nameOf(phoneOwnerId)}</strong> and a part sale for {nameOf(picked.owner_id)}.
+            </div>
+          )}
         </div>}
 
         {(perms.complete(job) || perms.closeFromBench(job)) && <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
