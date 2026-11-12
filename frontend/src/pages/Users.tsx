@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { getUsers, createUser, updateUser, updateUserPermissions, resetUserPassword } from '../services/api'
+import { getUsers, createUser, updateUser, updateUserPermissions, resetUserPassword, getPermissionModules } from '../services/api'
 import { User } from '../types'
 import { PageHeader, Card, Table, TR, TD, Btn, Modal, Input, Select } from '../components/Layout'
 
-const ALL_MODULES: { key: string; label: string }[] = [
+// Fallback only — the permissions screen loads the live list from the backend
+// (GET /users/modules) so it always matches what the server enforces.
+const FALLBACK_MODULES: { key: string; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'devices', label: 'Devices' },
+  { key: 'all_devices', label: 'All Devices' },
+  { key: 'sellable_stock', label: 'Sellable Stock' },
+  { key: 'stock_to_return', label: 'Stock to Return' },
+  { key: 'harvested_stock', label: 'Harvested Stock' },
   { key: 'intake', label: 'Intake / Purchase Orders' },
   { key: 'refurb', label: 'Refurb Jobs' },
   { key: 'sales', label: 'Sales' },
@@ -19,7 +25,9 @@ const ALL_MODULES: { key: string; label: string }[] = [
   { key: 'phone_models', label: 'Phone Models' },
   { key: 'suppliers', label: 'Suppliers' },
   { key: 'users', label: 'User Management' },
+  { key: 'cost_price', label: 'Cost Price Management' },
   { key: 'settings', label: 'Settings' },
+  { key: 'stock_owners', label: 'Stock Owners' },
 ]
 
 const ROLE_COLORS: Record<string, { bg: string; color: string }> = {
@@ -274,6 +282,12 @@ function PermissionsModal({ user, onClose, onSaved }: {
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(user.effective_modules))
   const [isCustom, setIsCustom] = useState(!!user.allowed_modules)
+  const { data: moduleData } = useQuery<{ modules: { key: string; label: string }[] }>({
+    queryKey: ['permission-modules'],
+    queryFn: () => getPermissionModules().then(r => r.data),
+    staleTime: 300_000,
+  })
+  const ALL_MODULES = moduleData?.modules ?? FALLBACK_MODULES
 
   const mut = useMutation({
     mutationFn: (data: unknown) => updateUserPermissions(user.id, data),
@@ -321,7 +335,7 @@ function PermissionsModal({ user, onClose, onSaved }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 14px', background: '#f8fafc', borderRadius: 8 }}>
           <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, fontWeight: 600, background: rc(user.role).bg, color: rc(user.role).color }}>{user.role}</span>
           <span style={{ fontSize: 13, color: '#64748b' }}>
-            {isCustom ? 'Custom permissions set' : 'Using role defaults'}
+            {user.role === 'ADMIN' ? 'Admins always have access to every page' : isCustom ? 'Custom permissions set' : 'Using role defaults'}
           </span>
           {isCustom && (
             <button onClick={resetToDefaults} disabled={mut.isPending} style={{

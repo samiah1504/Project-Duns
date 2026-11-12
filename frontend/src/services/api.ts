@@ -141,6 +141,7 @@ export const getEngineers = () => api.get('/users/engineers')
 export const createUser = (data: unknown) => api.post('/users', data)
 export const updateUser = (id: string, data: unknown) => api.patch(`/users/${id}`, data)
 export const updateUserPermissions = (id: string, data: unknown) => api.put(`/users/${id}/permissions`, data)
+export const getPermissionModules = () => api.get('/users/modules')
 export const resetUserPassword = (id: string, data: unknown) => api.post(`/users/${id}/reset-password`, data)
 
 // Returns (legacy single-device)

@@ -65,6 +65,17 @@ async def create_user(
     return _out(user)
 
 
+@router.get("/modules")
+async def list_modules(_: User = Depends(admin_only())):
+    """All permission modules with labels and each role's defaults, so the
+    permissions screen always matches what the backend enforces."""
+    from app.core.modules import ALL_MODULES, MODULE_LABELS, ROLE_DEFAULTS
+    return {
+        "modules": [{"key": k, "label": MODULE_LABELS.get(k, k)} for k in ALL_MODULES],
+        "role_defaults": ROLE_DEFAULTS,
+    }
+
+
 @router.get("/{user_id}", response_model=UserOut)
 async def get_user(
     user_id: str,

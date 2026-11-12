@@ -67,7 +67,14 @@ ROLE_DEFAULTS: dict[str, list[str]] = {
 
 
 def get_effective_modules(user) -> list[str]:
-    """Return the list of modules the user can access."""
+    """Return the list of modules the user can access.
+
+    ADMIN always has every module, so new pages (e.g. Stock Owners) appear for
+    admins even if custom permissions were saved before those pages existed.
+    """
+    role = user.role.value if hasattr(user.role, "value") else user.role
+    if role == "ADMIN":
+        return list(ALL_MODULES)
     if user.allowed_modules:
         return [m.strip() for m in user.allowed_modules.split(",") if m.strip()]
     return ROLE_DEFAULTS.get(user.role.value if hasattr(user.role, "value") else user.role, ["dashboard"])
