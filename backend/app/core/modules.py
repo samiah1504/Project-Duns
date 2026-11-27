@@ -62,7 +62,7 @@ ROLE_DEFAULTS: dict[str, list[str]] = {
     ],
     "SALES": ["dashboard", "sellable_stock", "sales", "customers", "returns"],
     "ENGINEER": ["dashboard", "refurb", "parts"],
-    "RECORDS": ["dashboard", "reports", "expenses"],
+    "RECORDS": ["dashboard", "reports", "expenses", "cost_price"],
 }
 
 

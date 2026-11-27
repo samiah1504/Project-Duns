@@ -16,7 +16,7 @@ from app.schemas.device import (
 )
 from app.schemas.audit_log import AuditLogOut
 from app.core.auth import get_current_user
-from app.core.permissions import inventory_or_admin, any_authenticated, admin_or_operations
+from app.core.permissions import inventory_or_admin, any_authenticated, admin_or_operations, cost_price_access
 from app.models.user import UserRole
 from app.core.exceptions import NotFoundError, ConflictError, ForbiddenError
 from app.services.device_state_machine import validate_transition
@@ -115,9 +115,9 @@ async def list_sellable_devices(
 @router.get("/pending-cost-entry", response_model=list[DeviceOut])
 async def list_pending_cost_entry(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(admin_or_operations()),
+    current_user: User = Depends(cost_price_access()),
 ):
-    """Devices that have no cost price set — visible to ADMIN/OPERATIONS only."""
+    """Devices that have no cost price set — ADMIN / OPERATIONS / RECORDS."""
     q = select(Device).options(selectinload(Device.model)).where(
         (Device.purchase_cost == None) | (Device.purchase_cost == Decimal("0.00"))
     )
@@ -240,9 +240,9 @@ async def update_cost_price(
     imei: str,
     body: CostPriceUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(admin_or_operations()),
+    current_user: User = Depends(cost_price_access()),
 ):
-    """Update cost price for a device — ADMIN/OPERATIONS only. Writes audit trail."""
+    """Update cost price for a device — ADMIN / OPERATIONS / RECORDS. Writes audit trail."""
     result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.imei == imei))
     device = result.scalar_one_or_none()
     if not device:
@@ -274,7 +274,7 @@ async def update_cost_price(
 async def get_price_history(
     imei: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(admin_or_operations()),
+    _: User = Depends(cost_price_access()),
 ):
     """Price change audit trail — ADMIN/OPERATIONS only."""
     result = await db.execute(select(Device).options(selectinload(Device.model)).where(Device.imei == imei))

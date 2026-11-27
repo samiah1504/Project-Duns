@@ -171,7 +171,7 @@ export default function AllDevices() {
     return true
   })
 
-  const canSeeCost = ['ADMIN', 'OPERATIONS'].includes(user?.role ?? '')
+  const canSeeCost = ['ADMIN', 'OPERATIONS', 'RECORDS'].includes(user?.role ?? '')
   const canEdit = ['ADMIN', 'OPERATIONS', 'INVENTORY'].includes(user?.role ?? '')
 
   return (

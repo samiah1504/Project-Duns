@@ -160,7 +160,7 @@ export default function CostPriceManagement() {
 
   return (
     <div>
-      <PageHeader title="Cost Price Management — ADMIN / OPERATIONS Only" />
+      <PageHeader title="Cost Price Management — Admin / Operations / Records & Accounts" />
 
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e2e8f0', marginBottom: 20 }}>
         <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>

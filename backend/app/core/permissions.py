@@ -30,6 +30,11 @@ def admin_or_operations():
     return require_roles("ADMIN", "OPERATIONS")
 
 
+def cost_price_access():
+    """Who may view and set device cost prices: management and Records / Accounts."""
+    return require_roles("ADMIN", "OPERATIONS", "RECORDS")
+
+
 def inventory_or_admin():
     return require_roles("ADMIN", "OPERATIONS", "INVENTORY")
 
