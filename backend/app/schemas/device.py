@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.models.device import DeviceStatus, DeviceGrade, DeviceLocation
 
 # Roles that are allowed to see cost price
-COST_PRICE_ROLES = {"ADMIN", "OPERATIONS"}
+COST_PRICE_ROLES = {"ADMIN", "OPERATIONS", "RECORDS"}
 
 
 class DeviceCreate(BaseModel):

@@ -65,7 +65,7 @@ export default function SellableStock() {
     return true
   })
 
-  const canSeeCost = ['ADMIN', 'OPERATIONS'].includes(user?.role ?? '')
+  const canSeeCost = ['ADMIN', 'OPERATIONS', 'RECORDS'].includes(user?.role ?? '')
 
   return (
     <div>
